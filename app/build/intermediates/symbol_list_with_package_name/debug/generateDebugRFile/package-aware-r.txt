@@ -1,0 +1,25 @@
+com.example.olahragakuy
+color black
+color purple_200
+color purple_500
+color purple_700
+color teal_200
+color teal_700
+color white
+drawable ic_launcher_background
+drawable ic_launcher_foreground
+drawable login_back
+drawable login_facebook
+drawable login_google
+drawable login_instagram
+drawable login_wordmark
+font poppins_bold
+font poppins_light
+font poppins_regular
+font poppins_semibold
+mipmap ic_launcher
+mipmap ic_launcher_round
+string app_name
+style Theme_OlahragaKuy
+xml backup_rules
+xml data_extraction_rules
