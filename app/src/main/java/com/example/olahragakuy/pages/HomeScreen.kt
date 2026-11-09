@@ -165,7 +165,7 @@ private fun StreakBanner(onClick: () -> Unit) {
             ) { Text("Pergi") }
         }
         Image(
-            painterResource(R.drawable.home_amico), "Ilustrasi olahraga bersama",
+            painterResource(R.drawable.amico_home), "Ilustrasi olahraga bersama",
             Modifier.width(100.dp).height(120.dp),
         )
     }

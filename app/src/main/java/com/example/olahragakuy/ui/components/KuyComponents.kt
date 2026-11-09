@@ -17,7 +17,12 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.olahragakuy.ui.theme.*
 @Composable
-fun KuyPrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun KuyPrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean
+) {
     Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(60.dp),
         shape = RoundedCornerShape(36.dp),
         colors = ButtonDefaults.buttonColors(containerColor = KuyButton, contentColor = KuyText),
