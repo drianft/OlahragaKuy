@@ -4,7 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.example.olahragakuy.ui.login.LoginScreen
+import com.example.olahragakuy.pages.LoginScreen
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -12,6 +12,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
-        setContent { OlahragaKuyTheme { LoginScreen(onBack = { finish() }) } }
+        setContent { OlahragaKuyTheme { AuthNavigation(onExit = { finish() }) } }
     }
 }

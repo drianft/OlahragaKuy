@@ -3,7 +3,7 @@ package com.example.olahragakuy
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
-import com.example.olahragakuy.ui.login.LoginScreen
+import com.example.olahragakuy.pages.LoginScreen
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 
 class LoginScreenshotTest {
