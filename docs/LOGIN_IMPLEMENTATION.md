@@ -25,7 +25,7 @@ Font berasal dari google/fonts, ofl/poppins. Tidak ada URL Figma sementara di ko
 
 ## Menjalankan
 Buka project OlahragaKuy di Android Studio, tunggu Gradle Sync, pilih perangkat lalu Run.
-Entry point: MainActivity; layar: ui/login/LoginScreen.kt.
+Entry point: MainActivity; layar: pages/LoginScreen.kt.
 Preview tersedia pada 440 x 906, 360 x 740, serta font scale 1.5.
 
 ## Verifikasi
