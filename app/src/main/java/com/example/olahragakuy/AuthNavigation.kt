@@ -6,7 +6,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import com.example.olahragakuy.ui.theme.KuyNavy
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
