@@ -45,10 +45,8 @@ fun RegisterScreen(
     // Passwords deliberately stay out of saved instance state.
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
-    var confirming by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var confirmationError by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     var profileWarning by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
@@ -59,24 +57,13 @@ fun RegisterScreen(
                 username.isBlank() -> "Isi nama pengguna terlebih dahulu."
                 email.isBlank() -> "Isi email terlebih dahulu."
                 password.length < 6 -> "Kata sandi minimal 6 karakter."
+                password != confirmation -> "Kedua kata sandi harus sama."
                 else -> null
             }
             if (error == null) {
                 focus.clearFocus()
-                confirmation = ""
-                confirmationError = null
-                confirming = true
-            }
-        }
-    }
-    val register: () -> Unit = {
-        if (!loading) {
-            if (password != confirmation) {
-                confirmationError = "Kedua kata sandi harus sama."
-            } else {
                 val displayName = username.trim()
                 loading = true
-                confirming = false
                 confirmation = ""
                 FirebaseAuth.getInstance()
                     .createUserWithEmailAndPassword(email.trim(), password)
@@ -164,6 +151,13 @@ fun RegisterScreen(
                     password, { if (!loading) password = it }, "Kata Sandi",
                     modifier = Modifier.testTag("register-password"),
                     visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
+                )
+                KuyTextField(
+                    confirmation, { if (!loading) confirmation = it }, "Konfirmasi Kata Sandi",
+                    modifier = Modifier.testTag("register-confirmation"),
+                    visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { submit() }),
                 )
@@ -208,27 +202,6 @@ fun RegisterScreen(
             }
             Spacer(Modifier.height(100.dp))
         }
-    }
-    if (confirming) {
-        AlertDialog(
-            onDismissRequest = { confirming = false; confirmation = "" },
-            title = { Text("Konfirmasi kata sandi") },
-            text = {
-                OutlinedTextField(
-                    value = confirmation, onValueChange = { confirmation = it; confirmationError = null },
-                    label = { Text("Ulangi kata sandi") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    isError = confirmationError != null,
-                    supportingText = { confirmationError?.let { Text(it) } },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { register() }),
-                )
-            },
-            confirmButton = { TextButton(onClick = register) { Text("Daftar") } },
-            dismissButton = {
-                TextButton(onClick = { confirming = false; confirmation = "" }) { Text("Batal") }
-            },
-        )
     }
     if (profileWarning) {
         AlertDialog(

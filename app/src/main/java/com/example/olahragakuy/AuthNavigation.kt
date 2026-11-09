@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.olahragakuy.pages.HomeScreen
 import com.example.olahragakuy.pages.LoginScreen
 import com.example.olahragakuy.pages.RegisterScreen
 
@@ -54,6 +55,7 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
             LoginScreen(
                 onBack = onExit,
                 onRegistered = { navController.navigate("register") { launchSingleTop = true } },
+                onLoggedIn = {navController.navigate("home"){popUpTo("login") { inclusive = true } } }
             )
         }
         composable("register") {
@@ -67,7 +69,9 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
             )
         }
         composable("home") {
-            Text("Selamat datang di OlahragaKuy!")
+            HomeScreen(
+
+            )
         }
     }
 
