@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.R
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
+import com.google.firebase.auth.FirebaseAuth
 
 private val HomeNavy = Color(0xFF0A1A2C)
 private val HomeBlue = Color(0xFF203F60)
@@ -33,6 +34,13 @@ private val HomeText = Color(0xFFE9EDF5)
 fun HomeScreen() {
     var draft by rememberSaveable { mutableStateOf("") }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
+    val currentUser = remember {
+        try { FirebaseAuth.getInstance().currentUser }
+        catch (_: Exception) { null }
+    }
+    val userDisplayName = currentUser?.displayName?.takeIf { it.isNotBlank() }
+        ?: currentUser?.email?.substringBefore("@")
+        ?: "Teman"
 
     Scaffold(
         containerColor = HomeNavy,
@@ -61,7 +69,13 @@ fun HomeScreen() {
                 ) {
                     listOf("Komunitas", "Lokasi", "Latihan", "Profil").forEachIndexed { index, label ->
                         TextButton(
-                            onClick = { if (index != 0) notice = "Halaman $label belum tersedia." },
+                            onClick = {
+                                if (index == 3 && currentUser != null) {
+                                    notice = "Masuk sebagai ${currentUser.email ?: userDisplayName}"
+                                } else if (index != 0) {
+                                    notice = "Halaman $label belum tersedia."
+                                }
+                            },
                             modifier = Modifier.sizeIn(minWidth = 64.dp, minHeight = 64.dp)
                                 .background(if (index == 0) Color(0xFFBB4D00) else Color.Transparent, CircleShape),
                             colors = ButtonDefaults.textButtonColors(
@@ -95,7 +109,7 @@ fun HomeScreen() {
                     OutlinedTextField(
                         value = draft,
                         onValueChange = { draft = it },
-                        placeholder = { Text("Apa yang anda pikirkan", fontSize = 12.sp) },
+                        placeholder = { Text("Apa yang anda pikirkan, $userDisplayName?", fontSize = 12.sp) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(16.dp),
                         maxLines = 3,
@@ -165,7 +179,7 @@ private fun StreakBanner(onClick: () -> Unit) {
             ) { Text("Pergi") }
         }
         Image(
-            painterResource(R.drawable.home_amico), "Ilustrasi olahraga bersama",
+            painterResource(R.drawable.login_wordmark), "Ilustrasi olahraga bersama",
             Modifier.width(100.dp).height(120.dp),
         )
     }

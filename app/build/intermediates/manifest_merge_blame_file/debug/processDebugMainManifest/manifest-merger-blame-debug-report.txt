@@ -48,50 +48,50 @@
 24-->[androidx.core:core:1.18.0] C:\Users\lenovo\.gradle\caches\9.6.0\transforms\a1b016a71168dc25bd61276b5d6bd7f6\transformed\core-1.18.0\AndroidManifest.xml:26:22-94
 25
 26    <application
-26-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:5:5-26:19
+26-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:5:5-26:19
 27        android:allowBackup="true"
-27-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:6:9-35
+27-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:6:9-35
 28        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
 28-->[androidx.core:core:1.18.0] C:\Users\lenovo\.gradle\caches\9.6.0\transforms\a1b016a71168dc25bd61276b5d6bd7f6\transformed\core-1.18.0\AndroidManifest.xml:28:18-86
 29        android:dataExtractionRules="@xml/data_extraction_rules"
-29-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:7:9-65
+29-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:7:9-65
 30        android:debuggable="true"
 31        android:extractNativeLibs="false"
 31-->INJECTED
 32        android:fullBackupContent="@xml/backup_rules"
-32-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:8:9-54
+32-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:8:9-54
 33        android:icon="@mipmap/ic_launcher"
-33-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:9:9-43
+33-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:9:9-43
 34        android:label="@string/app_name"
-34-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:10:9-41
+34-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:10:9-41
 35        android:roundIcon="@mipmap/ic_launcher_round"
-35-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:11:9-54
+35-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:11:9-54
 36        android:supportsRtl="true"
-36-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:12:9-35
+36-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:12:9-35
 37        android:testOnly="true"
 38        android:theme="@style/Theme.OlahragaKuy" >
-38-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:13:9-49
+38-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:13:9-49
 39        <activity
-39-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:14:9-25:20
+39-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:14:9-25:20
 40            android:name="com.example.olahragakuy.MainActivity"
-40-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:15:13-41
+40-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:15:13-41
 41            android:exported="true"
-41-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:16:13-36
+41-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:16:13-36
 42            android:label="@string/app_name"
-42-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:17:13-45
+42-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:17:13-45
 43            android:theme="@style/Theme.OlahragaKuy"
-43-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:18:13-53
+43-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:18:13-53
 44            android:windowSoftInputMode="adjustResize" >
-44-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:19:13-55
+44-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:19:13-55
 45            <intent-filter>
-45-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:20:13-24:29
+45-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:20:13-24:29
 46                <action android:name="android.intent.action.MAIN" />
-46-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:21:17-69
-46-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:21:25-66
+46-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:21:17-69
+46-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:21:25-66
 47
 48                <category android:name="android.intent.category.LAUNCHER" />
-48-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:23:17-77
-48-->C:\Users\lenovo\StudioProjects\OlahragaKuy-login\app\src\main\AndroidManifest.xml:23:27-74
+48-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:23:17-77
+48-->C:\Users\lenovo\StudioProjects\OlahragaKuy\app\src\main\AndroidManifest.xml:23:27-74
 49            </intent-filter>
 50        </activity>
 51        <activity

@@ -6,7 +6,6 @@ color purple_700
 color teal_200
 color teal_700
 color white
-drawable home_amico
 drawable ic_launcher_background
 drawable ic_launcher_foreground
 drawable login_back
