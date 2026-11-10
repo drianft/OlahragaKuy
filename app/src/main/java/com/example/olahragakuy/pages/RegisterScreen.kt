@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.olahragakuy.R
+import com.example.olahragakuy.ui.components.KuySuccessPopupOverlay
 import com.example.olahragakuy.ui.components.KuyTextField
 import com.example.olahragakuy.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
@@ -49,6 +50,7 @@ fun RegisterScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     var profileWarning by remember { mutableStateOf(false) }
+    var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
     val focus = LocalFocusManager.current
 
     val submit: () -> Unit = {
@@ -76,12 +78,12 @@ fun RegisterScreen(
                                     UserProfileChangeRequest.Builder().setDisplayName(displayName).build()
                                 ).addOnCompleteListener { profileResult ->
                                     loading = false
-                                    if (profileResult.isSuccessful) onRegistered()
+                                    if (profileResult.isSuccessful) showSuccessPopup = true
                                     else profileWarning = true
                                 }
                             } else {
                                 loading = false
-                                onRegistered()
+                                showSuccessPopup = true
                             }
                         } else {
                             loading = false
@@ -205,11 +207,11 @@ fun RegisterScreen(
     }
     if (profileWarning) {
         AlertDialog(
-            onDismissRequest = { profileWarning = false; onRegistered() },
+            onDismissRequest = { profileWarning = false; showSuccessPopup = true },
             title = { Text("Akun berhasil dibuat") },
             text = { Text("Nama pengguna belum berhasil disimpan. Akun tetap bisa digunakan untuk masuk.") },
             confirmButton = {
-                TextButton(onClick = { profileWarning = false; onRegistered() }) { Text("Lanjutkan") }
+                TextButton(onClick = { profileWarning = false; showSuccessPopup = true }) { Text("Lanjutkan") }
             },
         )
     }
@@ -220,6 +222,12 @@ fun RegisterScreen(
             confirmButton = { TextButton(onClick = { notice = null }) { Text("Mengerti") } },
         )
     }
+    KuySuccessPopupOverlay(
+        visible = showSuccessPopup,
+        illustrationRes = R.drawable.daftar_amico,
+        subtitle = "akun anda berhasil didaftarkan",
+        onContinue = onRegistered,
+    )
 }
 
 @Composable

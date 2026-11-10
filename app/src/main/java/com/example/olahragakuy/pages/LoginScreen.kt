@@ -32,6 +32,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.olahragakuy.R
 import com.example.olahragakuy.ui.components.KuyPrimaryButton
+import com.example.olahragakuy.ui.components.KuySuccessPopupOverlay
 import com.example.olahragakuy.ui.components.KuyTextField
 import com.example.olahragakuy.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
@@ -50,6 +51,7 @@ fun LoginScreen(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
+    var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
     val focus = LocalFocusManager.current
 
     val usernameError = if (attempted && emailOrUsername.isBlank()) "Isi nama pengguna atau email terlebih dahulu." else null
@@ -69,7 +71,7 @@ fun LoginScreen(
                     .addOnCompleteListener { task ->
                         loading = false
                         if (task.isSuccessful) {
-                            onLoggedIn()
+                            showSuccessPopup = true
                         } else {
                             error = "Gagal masuk. Periksa email dan kata sandi Anda."
                         }
@@ -77,7 +79,7 @@ fun LoginScreen(
             } else {
                 // If username without @ was entered, attempt demo/direct login
                 loading = false
-                onLoggedIn()
+                showSuccessPopup = true
             }
         }
     }
@@ -186,6 +188,12 @@ fun LoginScreen(
             confirmButton = { TextButton(onClick = { notice = null }) { Text("Mengerti") } }
         )
     }
+    KuySuccessPopupOverlay(
+        visible = showSuccessPopup,
+        illustrationRes = R.drawable.masuk_amico,
+        subtitle = "proses masuk akun berhasil",
+        onContinue = onLoggedIn,
+    )
 }
 
 @Composable
