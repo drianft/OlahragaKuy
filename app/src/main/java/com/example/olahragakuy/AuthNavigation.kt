@@ -15,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.olahragakuy.pages.HomeScreen
 import com.example.olahragakuy.pages.LoginScreen
+import com.example.olahragakuy.pages.OpeningScreen
 import com.example.olahragakuy.pages.RegisterScreen
 
 @Composable
@@ -23,7 +24,7 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
 
     NavHost(
         navController = navController,
-        startDestination = "login",
+        startDestination = "opening",
         modifier = modifier.fillMaxSize().background(KuyNavy),
         // Keep both screens opaque so the window never shows through a crossfade.
         enterTransition = {
@@ -51,11 +52,22 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
             )
         },
     ) {
+        composable("opening") {
+            // Opening stays in the back stack so Back from Login/Register returns to onboarding.
+            OpeningScreen(
+                onLoginClick = { navController.navigate("login") { launchSingleTop = true } },
+                onRegisterClick = { navController.navigate("register") { launchSingleTop = true } },
+            )
+        }
         composable("login") {
             LoginScreen(
-                onBack = onExit,
+                onBack = { if (!navController.popBackStack()) onExit() },
                 onRegistered = { navController.navigate("register") { launchSingleTop = true } },
-                onLoggedIn = {navController.navigate("home"){popUpTo("login") { inclusive = true } } }
+                onLoggedIn = {
+                    navController.navigate("home") {
+                        popUpTo("opening") { inclusive = true }
+                    }
+                }
             )
         }
         composable("register") {
@@ -63,7 +75,14 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                 onBack = { navController.popBackStack() },
                 onRegistered = {
                     navController.navigate("home") {
-                        popUpTo("login") { inclusive = true }
+                        popUpTo("opening") { inclusive = true }
+                    }
+                },
+                // Works whether Register was opened from Opening or from Login.
+                onLogin = {
+                    navController.navigate("login") {
+                        popUpTo("register") { inclusive = true }
+                        launchSingleTop = true
                     }
                 }
             )
