@@ -31,6 +31,7 @@ import com.example.olahragakuy.R
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FieldValue
 
 private val HomeNavy = Color(0xFF0A1A2C)
 private val HomeBlue = Color(0xFF203F60)
@@ -40,12 +41,16 @@ private val HomeText = Color(0xFFE9EDF5)
 @Composable
 fun HomeScreen() {
     var draft by rememberSaveable { mutableStateOf("") }
+    val auth = remember { FirebaseAuth.getInstance() }
+    val db = remember { FirebaseFirestore.getInstance() }
+    var menyimpan by remember { mutableStateOf(false) }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var posts by remember { mutableStateOf<List<DocumentSnapshot>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var feedError by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
     val isPreview = LocalInspectionMode.current
+
 
     DisposableEffect(isPreview, retry) {
         var listener: ListenerRegistration? = null
@@ -142,28 +147,110 @@ fun HomeScreen() {
                 StreakBanner(onClick = { notice = "Fitur streak belum tersedia." })
             }
             item {
-                Row(
-                    Modifier.fillMaxWidth().background(HomeBlue).padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(HomeBlue)
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    HomePlaceholder("Isi avatar\ndi sini", Modifier.size(40.dp), CircleShape)
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = { draft = it },
-                        placeholder = { Text("Apa yang anda pikirkan, $userDisplayName?", fontSize = 12.sp) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        maxLines = 3,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = HomeOrange,
-                            unfocusedBorderColor = HomeOrange,
-                            focusedTextColor = HomeText,
-                            unfocusedTextColor = HomeText,
-                            unfocusedPlaceholderColor = HomeText.copy(alpha = 0.75f),
-                        ),
-                    )
-                    HomeLogoButton("Foto +") { notice = "Unggah foto belum tersedia." }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        HomePlaceholder(
+                            "Isi avatar\ndi sini",
+                            Modifier.size(40.dp),
+                            CircleShape
+                        )
+
+                        OutlinedTextField(
+                            value = draft,
+                            onValueChange = { draft = it },
+                            enabled = !menyimpan,
+                            placeholder = {
+                                Text(
+                                    "Apa yang anda pikirkan, $userDisplayName?",
+                                    fontSize = 12.sp
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                            maxLines = 3,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = HomeOrange,
+                                unfocusedBorderColor = HomeOrange,
+                                focusedTextColor = HomeText,
+                                unfocusedTextColor = HomeText,
+                                unfocusedPlaceholderColor =
+                                    HomeText.copy(alpha = 0.75f)
+                            )
+                        )
+
+                        HomeLogoButton("Foto +") {
+                            notice = "Unggah foto belum tersedia."
+                        }
+                    }
+
+                    Button(
+                        modifier = Modifier.align(Alignment.End),
+                        enabled = !menyimpan &&
+                                draft.trim().length in 1..2000,
+                        onClick = {
+                            val caption = draft.trim()
+                            menyimpan = true
+                            notice = ""
+
+                            fun simpanPostingan(uid: String) {
+                                val post = hashMapOf<String, Any>(
+                                    "authorId" to uid,
+                                    "authorName" to userDisplayName, // Tambahan
+                                    "caption" to caption,
+                                    "createdAt" to FieldValue.serverTimestamp()
+                                )
+                                db.collection("posts")
+                                    .add(post)
+                                    .addOnSuccessListener {
+                                        draft = ""
+                                        menyimpan = false
+                                        notice = "Postingan berhasil dibuat!"
+
+                                        // Muat ulang data feed di sini jika
+                                        // pengambilan datanya menggunakan .get().
+                                    }
+                                    .addOnFailureListener { error ->
+                                        menyimpan = false
+                                        notice = "Gagal posting: ${error.message}"
+                                    }
+                            }
+
+                            val pengguna = auth.currentUser
+
+
+                            if (pengguna != null) {
+                                simpanPostingan(pengguna.uid)
+                            } else {
+                                auth.signInAnonymously()
+                                    .addOnSuccessListener { hasil ->
+                                        val uid = hasil.user?.uid
+
+                                        if (uid != null) {
+                                            simpanPostingan(uid)
+                                        } else {
+                                            menyimpan = false
+                                            notice = "ID pengguna tidak ditemukan."
+                                        }
+                                    }
+                                    .addOnFailureListener { error ->
+                                        menyimpan = false
+                                        notice = "Login gagal: ${error.message}"
+                                    }
+                            }
+                        }
+                    ) {
+                        Text(if (menyimpan) "Menyimpan..." else "Posting")
+                    }
                 }
             }
             when {
@@ -186,7 +273,7 @@ fun HomeScreen() {
                 else -> items(posts, key = { "post:${it.id}" }) { post ->
                     val createdAt = (post.get("createdAt") as? com.google.firebase.Timestamp)?.toDate()
                     HomePost(
-                        name = (post.get("name") as? String)?.takeIf { it.isNotBlank() } ?: "Pengguna",
+                        name = (post.get("authorName") as? String)?.takeIf { it.isNotBlank() } ?: "Pengguna",
                         time = createdAt?.let {
                             DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(it)
                         }.orEmpty(),
