@@ -5,6 +5,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.platform.LocalInspectionMode
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.ListenerRegistration
+import java.text.DateFormat
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -24,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.R
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 
 private val HomeNavy = Color(0xFF0A1A2C)
 private val HomeBlue = Color(0xFF203F60)
@@ -34,6 +41,41 @@ private val HomeText = Color(0xFFE9EDF5)
 fun HomeScreen() {
     var draft by rememberSaveable { mutableStateOf("") }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
+    var posts by remember { mutableStateOf<List<DocumentSnapshot>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var feedError by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableIntStateOf(0) }
+    val isPreview = LocalInspectionMode.current
+
+    DisposableEffect(isPreview, retry) {
+        var listener: ListenerRegistration? = null
+        if (isPreview) {
+            loading = false
+        } else {
+            loading = true
+            feedError = null
+            try {
+                listener = FirebaseFirestore.getInstance()
+                    .collection("posts")
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(20)
+                    .addSnapshotListener { snapshot, error ->
+                        loading = false
+                        if (error != null) {
+                            feedError = error.localizedMessage ?: "Gagal mengambil postingan."
+                        } else {
+                            posts = snapshot?.documents.orEmpty()
+                            feedError = null
+                        }
+                    }
+            } catch (error: Exception) {
+                loading = false
+                feedError = error.localizedMessage ?: "Gagal menghubungkan Firebase."
+            }
+        }
+        onDispose { listener?.remove() }
+    }
+
     val currentUser = remember {
         try { FirebaseAuth.getInstance().currentUser }
         catch (_: Exception) { null }
@@ -124,19 +166,35 @@ fun HomeScreen() {
                     HomeLogoButton("Foto +") { notice = "Unggah foto belum tersedia." }
                 }
             }
-            item {
-                HomePost(
-                    name = "Pecinta Jogging", time = "2 hari lalu",
-                    caption = "Ayoo jooging guysss", initialLikes = 57,
-                    onAction = { notice = it },
-                )
-            }
-            item {
-                HomePost(
-                    name = "Monster basket", time = "3 hari lalu",
-                    caption = "Yuk olahraga bareng!", initialLikes = 32,
-                    onAction = { notice = it },
-                )
+            when {
+                loading -> item {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = HomeOrange)
+                    }
+                }
+                feedError != null -> item {
+                    Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                        Text("Gagal memuat postingan: $feedError", color = HomeText)
+                        TextButton(onClick = { retry++ }) {
+                            Text("Coba lagi", color = HomeOrange)
+                        }
+                    }
+                }
+                posts.isEmpty() -> item {
+                    Text("Belum ada postingan.", Modifier.padding(20.dp), color = HomeText)
+                }
+                else -> items(posts, key = { "post:${it.id}" }) { post ->
+                    val createdAt = (post.get("createdAt") as? com.google.firebase.Timestamp)?.toDate()
+                    HomePost(
+                        name = (post.get("name") as? String)?.takeIf { it.isNotBlank() } ?: "Pengguna",
+                        time = createdAt?.let {
+                            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(it)
+                        }.orEmpty(),
+                        caption = post.get("caption") as? String ?: "(Tanpa caption)",
+                        initialLikes = (post.get("likes") as? Number)?.toLong()?.coerceAtLeast(0) ?: 0L,
+                        onAction = { notice = it },
+                    )
+                }
             }
         }
     }
@@ -190,10 +248,9 @@ private fun HomePost(
     name: String,
     time: String,
     caption: String,
-    initialLikes: Int,
+    initialLikes: Long,
     onAction: (String) -> Unit,
 ) {
-    var liked by rememberSaveable { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().background(HomeBlue).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -216,23 +273,18 @@ private fun HomePost(
             RoundedCornerShape(24.dp),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { liked = !liked }) {
+            TextButton(onClick = { onAction("Fitur suka belum tersedia.") }) {
                 Text(
-                    "${if (liked) "♥" else "♡"}  ${initialLikes + if (liked) 1 else 0}",
-                    color = if (liked) HomeOrange else HomeText, fontSize = 20.sp,
+                    "♡  $initialLikes",
+                    color = HomeText, fontSize = 20.sp,
                 )
             }
             TextButton(onClick = { onAction("Fitur komentar belum tersedia.") }) {
-                Text("Komentar  4", color = HomeText, fontSize = 12.sp)
+                Text("Komentar", color = HomeText, fontSize = 12.sp)
             }
             TextButton(onClick = { onAction("Fitur bagikan belum tersedia.") }) {
-                Text("Bagikan  8", color = HomeText, fontSize = 12.sp)
+                Text("Bagikan", color = HomeText, fontSize = 12.sp)
             }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            HomePlaceholder("Logo", Modifier.size(24.dp), CircleShape)
-            Text("disukai oleh ", color = HomeText, fontSize = 11.sp)
-            Text("Monster Basket", color = HomeText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
