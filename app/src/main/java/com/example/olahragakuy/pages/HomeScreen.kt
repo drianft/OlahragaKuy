@@ -193,6 +193,7 @@ fun HomeScreen(onCreatePost: () -> Unit = {}) {
                         }.orEmpty(),
                         caption = post.get("caption") as? String ?: "(Tanpa caption)",
                         imageUrl = (post.get("imageUrl") as? String)?.takeIf { it.isNotBlank() },
+                        taggedNames = com.example.olahragakuy.pages.posts.taggedFriendNamesFrom(post.get("taggedFriends")),
                         initialLikes = (post.get("likes") as? Number)?.toLong()?.coerceAtLeast(0) ?: 0L,
                         initialComment = (post.get("comment") as? Number)?.toLong()?.coerceAtLeast(0) ?: 0L,
                         initialShare = (post.get("Share") as? Number)?.toLong()?.coerceAtLeast(0) ?: 0L,
@@ -268,6 +269,7 @@ private fun HomePost(
     initialShare: Long,
     onAction: (String) -> Unit,
     onCommentClick: () -> Unit = {},
+    taggedNames: List<String> = emptyList(),
 ) {
     Column(
         Modifier.fillMaxWidth().background(HomeBlue).padding(20.dp),
@@ -277,6 +279,13 @@ private fun HomePost(
             HomePlaceholder("Isi avatar\ndi sini", Modifier.size(54.dp), CircleShape)
             Column(Modifier.weight(1f)) {
                 Text(name, color = HomeText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                if (taggedNames.isNotEmpty()) {
+                    Text(
+                        "bersama ${taggedNames.joinToString()}",
+                        color = HomeText.copy(alpha = 0.8f),
+                        fontSize = 12.sp,
+                    )
+                }
                 Text(time, color = HomeOrange, fontSize = 12.sp)
             }
             TextButton(onClick = { onAction("Menu postingan belum tersedia.") }) {

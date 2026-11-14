@@ -65,6 +65,14 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.tooling.preview.Preview
+import com.example.olahragakuy.R
+import com.example.olahragakuy.ui.components.KuySuccessPopupOverlay
+import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
+
+// TODO: ganti ke R.drawable.post_amico setelah amico1.svg diimpor via Vector Asset Studio.
+private val PostSuccessIllustration = R.drawable.amico_home
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +85,11 @@ fun CreatePostScreen(onBack: () -> Unit, onPosted: () -> Unit) {
     val context = LocalContext.current.applicationContext
     var menyimpan by remember { mutableStateOf(false) }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
+    var showTagFriends by rememberSaveable { mutableStateOf(false) }
+    var taggedFriends by rememberSaveable(stateSaver = TaggedFriendsSaver) {
+        mutableStateOf(emptyList<FollowingFriend>())
+    }
+    var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
     val userDisplayName = auth.currentUser?.displayName?.takeIf { it.isNotBlank() }
         ?: auth.currentUser?.email?.substringBefore("@")
         ?: "Teman"
@@ -88,6 +101,7 @@ fun CreatePostScreen(onBack: () -> Unit, onPosted: () -> Unit) {
     }
 
     androidx.activity.compose.BackHandler(enabled = menyimpan) { }
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = HomeNavy,
         contentColor = HomeText,
@@ -124,6 +138,7 @@ fun CreatePostScreen(onBack: () -> Unit, onPosted: () -> Unit) {
                         notice = null
 
                         val photoToUpload = selectedPhoto
+                        val friendsToTag = taggedFriends
 
                         fun simpanPostingan(uid: String) {
                             val postRef = db.collection("posts").document()
@@ -136,13 +151,15 @@ fun CreatePostScreen(onBack: () -> Unit, onPosted: () -> Unit) {
                                     "createdAt" to FieldValue.serverTimestamp()
                                 )
                                 if (imageUrl != null) post["imageUrl"] = imageUrl
+                                post.putAll(taggedFriendsFields(friendsToTag))
 
                                 postRef.set(post)
                                     .addOnSuccessListener {
                                         draft = ""
                                         selectedPhoto = null
+                                        taggedFriends = emptyList()
                                         menyimpan = false
-                                        onPosted()
+                                        showSuccessPopup = true
                                     }
                                     .addOnFailureListener { error ->
                                         menyimpan = false
@@ -322,7 +339,14 @@ fun CreatePostScreen(onBack: () -> Unit, onPosted: () -> Unit) {
                         photo = false,
                         enabled = !menyimpan,
                         modifier = Modifier.weight(1f),
-                    ) { notice = "Fitur tandai teman belum tersedia." }
+                    ) { showTagFriends = true }
+                }
+                if (taggedFriends.isNotEmpty()) {
+                    TaggedFriendsRow(
+                        friends = taggedFriends,
+                        enabled = !menyimpan,
+                        onRemove = { taggedFriends = toggleTaggedFriend(taggedFriends, it) },
+                    )
                 }
                 notice?.let {
                     Text(it, color = HomeText, style = MaterialTheme.typography.bodySmall)
@@ -347,6 +371,7 @@ fun CreatePostScreen(onBack: () -> Unit, onPosted: () -> Unit) {
                     style = MaterialTheme.typography.titleLarge,
                 )
 
+
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
@@ -366,6 +391,56 @@ fun CreatePostScreen(onBack: () -> Unit, onPosted: () -> Unit) {
                     onClick = { showPhotoSheet = false },
                 ) {
                     Text("Batal", color = HomeText)
+                }
+            }
+        }
+    }
+
+    if (showTagFriends) {
+        TagFriendsScreen(
+            selected = taggedFriends,
+            onSelectedChange = { taggedFriends = it },
+            onBack = { showTagFriends = false },
+        )
+    }
+
+    KuySuccessPopupOverlay(
+        visible = showSuccessPopup,
+        illustrationRes = PostSuccessIllustration,
+        subtitle = "Postingan anda berhasil dibuat",
+        onContinue = {
+            showSuccessPopup = false
+            onPosted()
+        },
+    )
+    }
+}
+
+@Composable
+private fun TaggedFriendsRow(
+    friends: List<FollowingFriend>,
+    enabled: Boolean,
+    onRemove: (FollowingFriend) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Bersama", color = HomeText, style = MaterialTheme.typography.titleSmall)
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            friends.forEach { friend ->
+                Surface(
+                    onClick = { onRemove(friend) },
+                    enabled = enabled,
+                    shape = RoundedCornerShape(20.dp),
+                    color = HomeBlue,
+                    contentColor = HomeText,
+                ) {
+                    Text(
+                        "${friend.displayName}  ✕",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        fontSize = 12.sp,
+                    )
                 }
             }
         }
@@ -442,6 +517,21 @@ private fun PostActionCard(
                 fontSize = 15.sp,
                 lineHeight = 20.sp,
                 fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 640)
+@Composable
+private fun BerhasilPostingPreview() {
+    OlahragaKuyTheme {
+        Box(Modifier.fillMaxSize().background(HomeNavy)) {
+            KuySuccessPopupOverlay(
+                visible = true,
+                illustrationRes = PostSuccessIllustration,
+                subtitle = "Postingan anda berhasil dibuat",
+                onContinue = {},
             )
         }
     }
