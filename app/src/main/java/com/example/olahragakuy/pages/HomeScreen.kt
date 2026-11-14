@@ -1,6 +1,10 @@
 package com.example.olahragakuy.pages
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -19,6 +23,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.SubcomposeAsyncImage
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -33,17 +39,13 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
 
-private val HomeNavy = Color(0xFF0A1A2C)
-private val HomeBlue = Color(0xFF203F60)
-private val HomeOrange = Color(0xFFFF6B00)
-private val HomeText = Color(0xFFE9EDF5)
+val HomeNavy = Color(0xFF0A1A2C)
+val HomeBlue = Color(0xFF203F60)
+val HomeOrange = Color(0xFFFF6B00)
+val HomeText = Color(0xFFE9EDF5)
 
 @Composable
-fun HomeScreen() {
-    var draft by rememberSaveable { mutableStateOf("") }
-    val auth = remember { FirebaseAuth.getInstance() }
-    val db = remember { FirebaseFirestore.getInstance() }
-    var menyimpan by remember { mutableStateOf(false) }
+fun HomeScreen(onCreatePost: () -> Unit = {}) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var posts by remember { mutableStateOf<List<DocumentSnapshot>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -147,110 +149,23 @@ fun HomeScreen() {
                 StreakBanner(onClick = { notice = "Fitur streak belum tersedia." })
             }
             item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(HomeBlue)
+                Row(
+                    modifier = Modifier.fillMaxWidth().background(HomeBlue)
+                        .clickable(role = Role.Button, onClickLabel = "Buat postingan", onClick = onCreatePost)
                         .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        HomePlaceholder(
-                            "Isi avatar\ndi sini",
-                            Modifier.size(40.dp),
-                            CircleShape
-                        )
-
-                        OutlinedTextField(
-                            value = draft,
-                            onValueChange = { draft = it },
-                            enabled = !menyimpan,
-                            placeholder = {
-                                Text(
-                                    "Apa yang anda pikirkan, $userDisplayName?",
-                                    fontSize = 12.sp
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(16.dp),
-                            maxLines = 3,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = HomeOrange,
-                                unfocusedBorderColor = HomeOrange,
-                                focusedTextColor = HomeText,
-                                unfocusedTextColor = HomeText,
-                                unfocusedPlaceholderColor =
-                                    HomeText.copy(alpha = 0.75f)
-                            )
-                        )
-
-                        HomeLogoButton("Foto +") {
-                            notice = "Unggah foto belum tersedia."
-                        }
-                    }
-
-                    Button(
-                        modifier = Modifier.align(Alignment.End),
-                        enabled = !menyimpan &&
-                                draft.trim().length in 1..2000,
-                        onClick = {
-                            val caption = draft.trim()
-                            menyimpan = true
-                            notice = ""
-
-                            fun simpanPostingan(uid: String) {
-                                val post = hashMapOf<String, Any>(
-                                    "authorId" to uid,
-                                    "authorName" to userDisplayName, // Tambahan
-                                    "caption" to caption,
-                                    "createdAt" to FieldValue.serverTimestamp()
-                                )
-                                db.collection("posts")
-                                    .add(post)
-                                    .addOnSuccessListener {
-                                        draft = ""
-                                        menyimpan = false
-                                        notice = "Postingan berhasil dibuat!"
-
-                                        // Muat ulang data feed di sini jika
-                                        // pengambilan datanya menggunakan .get().
-                                    }
-                                    .addOnFailureListener { error ->
-                                        menyimpan = false
-                                        notice = "Gagal posting: ${error.message}"
-                                    }
-                            }
-
-                            val pengguna = auth.currentUser
-
-
-                            if (pengguna != null) {
-                                simpanPostingan(pengguna.uid)
-                            } else {
-                                auth.signInAnonymously()
-                                    .addOnSuccessListener { hasil ->
-                                        val uid = hasil.user?.uid
-
-                                        if (uid != null) {
-                                            simpanPostingan(uid)
-                                        } else {
-                                            menyimpan = false
-                                            notice = "ID pengguna tidak ditemukan."
-                                        }
-                                    }
-                                    .addOnFailureListener { error ->
-                                        menyimpan = false
-                                        notice = "Login gagal: ${error.message}"
-                                    }
-                            }
-                        }
-                    ) {
-                        Text(if (menyimpan) "Menyimpan..." else "Posting")
-                    }
+                    HomePlaceholder("Isi avatar\ndi sini", Modifier.size(40.dp), CircleShape)
+                    Text(
+                        "Apa yang anda pikirkan, $userDisplayName?",
+                        modifier = Modifier.weight(1f)
+                            .border(1.dp, HomeOrange, RoundedCornerShape(16.dp))
+                            .padding(16.dp),
+                        color = HomeText.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                    )
+                    Text("Foto +", color = HomeOrange, fontSize = 12.sp)
                 }
             }
             when {
@@ -278,6 +193,7 @@ fun HomeScreen() {
                             DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(it)
                         }.orEmpty(),
                         caption = post.get("caption") as? String ?: "(Tanpa caption)",
+                        imageUrl = (post.get("imageUrl") as? String)?.takeIf { it.isNotBlank() },
                         initialLikes = (post.get("likes") as? Number)?.toLong()?.coerceAtLeast(0) ?: 0L,
                         onAction = { notice = it },
                     )
@@ -295,6 +211,9 @@ fun HomeScreen() {
         )
     }
 }
+
+
+
 
 @Composable
 private fun StreakBanner(onClick: () -> Unit) {
@@ -335,6 +254,7 @@ private fun HomePost(
     name: String,
     time: String,
     caption: String,
+    imageUrl: String?,
     initialLikes: Long,
     onAction: (String) -> Unit,
 ) {
@@ -353,12 +273,25 @@ private fun HomePost(
             }
         }
         Text(caption, color = HomeText, fontSize = 14.sp)
-        // Ganti placeholder ini dengan Image(painterResource(R.drawable.nama_foto), ...).
-        HomePlaceholder(
-            "Isi foto postingan di sini",
-            Modifier.fillMaxWidth().aspectRatio(1.28f),
-            RoundedCornerShape(24.dp),
-        )
+        if (imageUrl != null) {
+            SubcomposeAsyncImage(
+                model = imageUrl,
+                contentDescription = "Foto postingan oleh $name",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().aspectRatio(1.28f)
+                    .clip(RoundedCornerShape(24.dp)),
+                loading = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = HomeOrange)
+                    }
+                },
+                error = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Foto gagal dimuat", color = HomeText)
+                    }
+                },
+            )
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { onAction("Fitur suka belum tersedia.") }) {
                 Text(
@@ -377,7 +310,7 @@ private fun HomePost(
 }
 
 @Composable
-private fun HomeLogoButton(label: String, onClick: () -> Unit) {
+fun HomeLogoButton(label: String, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
         contentPadding = PaddingValues(2.dp),
@@ -391,7 +324,7 @@ private fun HomeLogoButton(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun HomePlaceholder(
+fun HomePlaceholder(
     label: String,
     modifier: Modifier = Modifier,
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(12.dp),

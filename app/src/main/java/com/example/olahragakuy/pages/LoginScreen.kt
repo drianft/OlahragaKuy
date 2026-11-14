@@ -34,7 +34,10 @@ import com.example.olahragakuy.R
 import com.example.olahragakuy.ui.components.KuyPrimaryButton
 import com.example.olahragakuy.ui.components.KuyTextField
 import com.example.olahragakuy.ui.theme.*
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
 
 /** Figma Login 5:2002. Android supplies its own status and navigation bars. */
 @Composable
@@ -52,7 +55,7 @@ fun LoginScreen(
     var notice by remember { mutableStateOf<String?>(null) }
     val focus = LocalFocusManager.current
 
-    val usernameError = if (attempted && emailOrUsername.isBlank()) "Isi nama pengguna atau email terlebih dahulu." else null
+    val usernameError = if (attempted && emailOrUsername.isBlank()) "Isi email terlebih dahulu." else null
     val passwordError = if (attempted && password.isEmpty()) "Isi kata sandi terlebih dahulu." else null
 
     val submit = {
@@ -71,13 +74,12 @@ fun LoginScreen(
                         if (task.isSuccessful) {
                             onLoggedIn()
                         } else {
-                            error = "Gagal masuk. Periksa email dan kata sandi Anda."
+                            error = authErrorMessage(task.exception)
                         }
                     }
             } else {
-                // If username without @ was entered, attempt demo/direct login
                 loading = false
-                onLoggedIn()
+                error = "Gunakan alamat email yang didaftarkan untuk masuk."
             }
         }
     }
@@ -129,9 +131,9 @@ fun LoginScreen(
                 Spacer(Modifier.height((43 * gapScale).dp))
                 Column(verticalArrangement = Arrangement.spacedBy(21.dp)) {
                     KuyTextField(
-                        emailOrUsername, { if (!loading) emailOrUsername = it }, "Nama Pengguna / Email",
+                        emailOrUsername, { if (!loading) emailOrUsername = it }, "Email",
                         modifier = Modifier.testTag("username"), errorMessage = usernameError,
-                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Next),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false, imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) })
                     )
                     KuyTextField(
@@ -198,6 +200,24 @@ private fun SocialButton(@DrawableRes icon: Int, provider: String, iconSize: Int
             Image(painterResource(icon), "Masuk dengan $provider", Modifier.size(iconSize.dp))
         }
     }
+}
+
+internal fun authErrorMessage(exception: Exception?): String = when (exception) {
+    is FirebaseNetworkException ->
+        "Tidak dapat terhubung ke server. Periksa koneksi internet perangkat, lalu coba lagi."
+    is FirebaseTooManyRequestsException ->
+        "Terlalu banyak percobaan. Tunggu beberapa saat, lalu coba lagi."
+    is FirebaseAuthException -> when (exception.errorCode) {
+        "ERROR_INVALID_EMAIL" -> "Format email tidak valid."
+        "ERROR_WEAK_PASSWORD" -> "Kata sandi terlalu lemah. Gunakan kata sandi yang lebih kuat."
+        "ERROR_EMAIL_ALREADY_IN_USE" -> "Email sudah terdaftar. Silakan masuk dengan akun tersebut."
+        "ERROR_INVALID_CREDENTIAL", "ERROR_WRONG_PASSWORD", "ERROR_USER_NOT_FOUND",
+        "ERROR_INVALID_LOGIN_CREDENTIALS" -> "Email atau kata sandi tidak sesuai."
+        "ERROR_USER_DISABLED" -> "Akun dinonaktifkan. Hubungi pengelola aplikasi."
+        "ERROR_OPERATION_NOT_ALLOWED" -> "Login email dan kata sandi belum tersedia. Hubungi pengelola aplikasi."
+        else -> "Autentikasi gagal. Silakan coba lagi."
+    }
+    else -> "Autentikasi gagal. Silakan coba lagi."
 }
 
 @Preview(name = "Login reference", widthDp = 440, heightDp = 906, showBackground = true)

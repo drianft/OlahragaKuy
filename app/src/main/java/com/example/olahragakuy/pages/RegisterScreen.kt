@@ -64,12 +64,12 @@ fun RegisterScreen(
                 focus.clearFocus()
                 val displayName = username.trim()
                 loading = true
-                confirmation = ""
                 FirebaseAuth.getInstance()
                     .createUserWithEmailAndPassword(email.trim(), password)
                     .addOnCompleteListener { result ->
                         if (result.isSuccessful) {
                             password = ""
+                            confirmation = ""
                             val user = result.result.user
                             if (user != null) {
                                 user.updateProfile(
@@ -85,7 +85,7 @@ fun RegisterScreen(
                             }
                         } else {
                             loading = false
-                            error = "Pendaftaran gagal. Periksa email dan kata sandi, lalu coba lagi."
+                            error = authErrorMessage(result.exception)
                         }
                     }
             }

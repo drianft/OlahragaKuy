@@ -8,6 +8,8 @@
     <color name="teal_700">#FF018786</color>
     <color name="white">#FFFFFFFF</color>
     <string name="app_name">OlahragaKuy</string>
+    <string name="cloudinary_cloud_name" translatable="false">h3gsbsi8</string>
+    <string name="cloudinary_upload_preset" translatable="false">olahragakuy_posts</string>
     <string name="gcm_defaultSenderId" translatable="false">404054610431</string>
     <string name="google_api_key" translatable="false">AIzaSyAtfcLMUAnbBowWIGdrKWQMHw7sjBEGESs</string>
     <string name="google_app_id" translatable="false">1:404054610431:android:3e7450c891e423d5de97ca</string>

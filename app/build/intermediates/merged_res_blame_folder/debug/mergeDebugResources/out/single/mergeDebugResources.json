@@ -1,102 +1,102 @@
 [
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-mdpi_ic_launcher_round.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-mdpi/ic_launcher_round.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/drawable-nodpi_login_facebook.png.flat",
+        "source": "com.example.olahragakuy.app-main-76:/drawable-nodpi/login_facebook.png"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/drawable-nodpi_login_instagram.png.flat",
-        "source": "com.example.olahragakuy.app-main-57:/drawable-nodpi/login_instagram.png"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-hdpi_ic_launcher.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-hdpi/ic_launcher.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/drawable_ic_launcher_background.xml.flat",
-        "source": "com.example.olahragakuy.app-main-57:/drawable/ic_launcher_background.xml"
+        "merged": "com.example.olahragakuy.app-debug-74:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.example.olahragakuy.app-main-76:/drawable/ic_launcher_background.xml"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/font_poppins_bold.ttf.flat",
-        "source": "com.example.olahragakuy.app-main-57:/font/poppins_bold.ttf"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-xhdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-xhdpi/ic_launcher_round.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/xml_data_extraction_rules.xml.flat",
-        "source": "com.example.olahragakuy.app-main-57:/xml/data_extraction_rules.xml"
+        "merged": "com.example.olahragakuy.app-debug-74:/font_poppins_regular.ttf.flat",
+        "source": "com.example.olahragakuy.app-main-76:/font/poppins_regular.ttf"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-anydpi_ic_launcher_round.xml.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-anydpi/ic_launcher_round.xml"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-xxxhdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-xxxhdpi/ic_launcher_round.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-mdpi_ic_launcher.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-mdpi/ic_launcher.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/xml_data_extraction_rules.xml.flat",
+        "source": "com.example.olahragakuy.app-main-76:/xml/data_extraction_rules.xml"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/font_poppins_semibold.ttf.flat",
-        "source": "com.example.olahragakuy.app-main-57:/font/poppins_semibold.ttf"
+        "merged": "com.example.olahragakuy.app-debug-74:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.example.olahragakuy.app-main-76:/drawable/ic_launcher_foreground.xml"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-xxhdpi_ic_launcher.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-xxhdpi/ic_launcher.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/xml_backup_rules.xml.flat",
+        "source": "com.example.olahragakuy.app-main-76:/xml/backup_rules.xml"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/font_poppins_regular.ttf.flat",
-        "source": "com.example.olahragakuy.app-main-57:/font/poppins_regular.ttf"
+        "merged": "com.example.olahragakuy.app-debug-74:/font_poppins_light.ttf.flat",
+        "source": "com.example.olahragakuy.app-main-76:/font/poppins_light.ttf"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/drawable-nodpi_login_facebook.png.flat",
-        "source": "com.example.olahragakuy.app-main-57:/drawable-nodpi/login_facebook.png"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-xxxhdpi_ic_launcher.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-xxxhdpi/ic_launcher.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-xxhdpi_ic_launcher_round.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-xxhdpi/ic_launcher_round.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/font_poppins_semibold.ttf.flat",
+        "source": "com.example.olahragakuy.app-main-76:/font/poppins_semibold.ttf"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/xml_backup_rules.xml.flat",
-        "source": "com.example.olahragakuy.app-main-57:/xml/backup_rules.xml"
+        "merged": "com.example.olahragakuy.app-debug-74:/drawable-nodpi_login_google.png.flat",
+        "source": "com.example.olahragakuy.app-main-76:/drawable-nodpi/login_google.png"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-anydpi_ic_launcher.xml.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-anydpi/ic_launcher.xml"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-xxhdpi_ic_launcher.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-xxhdpi/ic_launcher.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/drawable-nodpi_login_google.png.flat",
-        "source": "com.example.olahragakuy.app-main-57:/drawable-nodpi/login_google.png"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-xhdpi_ic_launcher.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-xhdpi/ic_launcher.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/drawable-nodpi_login_back.png.flat",
-        "source": "com.example.olahragakuy.app-main-57:/drawable-nodpi/login_back.png"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-mdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-mdpi/ic_launcher_round.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-xxxhdpi_ic_launcher.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-xxxhdpi/ic_launcher.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-xxhdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-xxhdpi/ic_launcher_round.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-hdpi_ic_launcher_round.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-hdpi/ic_launcher_round.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-mdpi_ic_launcher.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-mdpi/ic_launcher.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-xhdpi_ic_launcher_round.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-xhdpi/ic_launcher_round.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-anydpi_ic_launcher_round.xml.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-anydpi/ic_launcher_round.xml"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/drawable_ic_launcher_foreground.xml.flat",
-        "source": "com.example.olahragakuy.app-main-57:/drawable/ic_launcher_foreground.xml"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-hdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-hdpi/ic_launcher_round.webp"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-xhdpi_ic_launcher.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-xhdpi/ic_launcher.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/drawable-nodpi_login_instagram.png.flat",
+        "source": "com.example.olahragakuy.app-main-76:/drawable-nodpi/login_instagram.png"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/drawable-nodpi_login_wordmark.png.flat",
-        "source": "com.example.olahragakuy.app-main-57:/drawable-nodpi/login_wordmark.png"
+        "merged": "com.example.olahragakuy.app-debug-74:/drawable-nodpi_login_wordmark.png.flat",
+        "source": "com.example.olahragakuy.app-main-76:/drawable-nodpi/login_wordmark.png"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-xxxhdpi_ic_launcher_round.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-xxxhdpi/ic_launcher_round.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/drawable-nodpi_login_back.png.flat",
+        "source": "com.example.olahragakuy.app-main-76:/drawable-nodpi/login_back.png"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/font_poppins_light.ttf.flat",
-        "source": "com.example.olahragakuy.app-main-57:/font/poppins_light.ttf"
+        "merged": "com.example.olahragakuy.app-debug-74:/font_poppins_bold.ttf.flat",
+        "source": "com.example.olahragakuy.app-main-76:/font/poppins_bold.ttf"
     },
     {
-        "merged": "com.example.olahragakuy.app-debug-55:/mipmap-hdpi_ic_launcher.webp.flat",
-        "source": "com.example.olahragakuy.app-main-57:/mipmap-hdpi/ic_launcher.webp"
+        "merged": "com.example.olahragakuy.app-debug-74:/mipmap-anydpi_ic_launcher.xml.flat",
+        "source": "com.example.olahragakuy.app-main-76:/mipmap-anydpi/ic_launcher.xml"
     }
 ]
