@@ -1,5 +1,6 @@
 package com.example.olahragakuy.pages
 
+import android.util.Patterns
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -32,12 +33,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.olahragakuy.R
 import com.example.olahragakuy.ui.components.KuyPrimaryButton
+import com.example.olahragakuy.ui.components.KuySuccessPopupOverlay
 import com.example.olahragakuy.ui.components.KuyTextField
 import com.example.olahragakuy.ui.theme.*
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
 
 /** Figma Login 5:2002. Android supplies its own status and navigation bars. */
 @Composable
@@ -46,41 +49,56 @@ fun LoginScreen(
     onRegistered: () -> Unit = {},
     onLoggedIn: () -> Unit = {},
 ) {
-    var emailOrUsername by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
     // Password stays in memory; never serialize it to saved-instance-state.
     var password by remember { mutableStateOf("") }
     var attempted by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
+    var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
     val focus = LocalFocusManager.current
 
-    val usernameError = if (attempted && emailOrUsername.isBlank()) "Isi email terlebih dahulu." else null
+    val emailError = when {
+        !attempted -> null
+        email.isBlank() -> "Isi email terlebih dahulu."
+        !Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches() ->
+            "Masukkan format email yang valid untuk masuk."
+        else -> null
+    }
     val passwordError = if (attempted && password.isEmpty()) "Isi kata sandi terlebih dahulu." else null
 
     val submit = {
         attempted = true
-        if (emailOrUsername.isNotBlank() && password.isNotEmpty() && !loading) {
+        val trimmedEmail = email.trim()
+        val isEmailValid = trimmedEmail.isNotEmpty() && Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()
+        if (isEmailValid && password.isNotEmpty() && !loading) {
             focus.clearFocus()
             loading = true
             error = null
 
-            val input = emailOrUsername.trim()
-            if (input.contains("@")) {
-                FirebaseAuth.getInstance()
-                    .signInWithEmailAndPassword(input, password)
-                    .addOnCompleteListener { task ->
-                        loading = false
-                        if (task.isSuccessful) {
-                            onLoggedIn()
-                        } else {
-                            error = authErrorMessage(task.exception)
+            FirebaseAuth.getInstance()
+                .signInWithEmailAndPassword(trimmedEmail, password)
+                .addOnCompleteListener { task ->
+                    loading = false
+                    if (task.isSuccessful && task.result?.user != null) {
+                        attempted = false
+                        showSuccessPopup = true
+                    } else {
+                        error = when (task.exception) {
+                            is FirebaseAuthInvalidUserException ->
+                                "Akun tidak terdaftar. Silakan daftar terlebih dahulu."
+                            is FirebaseAuthInvalidCredentialsException ->
+                                "Email atau kata sandi salah, atau akun belum terdaftar."
+                            is FirebaseNetworkException ->
+                                "Koneksi internet bermasalah. Periksa jaringan Anda."
+                            is FirebaseTooManyRequestsException ->
+                                "Terlalu banyak percobaan masuk. Coba lagi nanti."
+                            else ->
+                                "Gagal masuk. Periksa email dan kata sandi Anda."
                         }
                     }
-            } else {
-                loading = false
-                error = "Gunakan alamat email yang didaftarkan untuk masuk."
-            }
+                }
         }
     }
 
@@ -131,20 +149,40 @@ fun LoginScreen(
                 Spacer(Modifier.height((43 * gapScale).dp))
                 Column(verticalArrangement = Arrangement.spacedBy(21.dp)) {
                     KuyTextField(
-                        emailOrUsername, { if (!loading) emailOrUsername = it }, "Email",
-                        modifier = Modifier.testTag("username"), errorMessage = usernameError,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false, imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) })
+                        email,
+                        {
+                            if (!loading) {
+                                email = it
+                                error = null
+                            }
+                        },
+                        "Email",
+                        modifier = Modifier.testTag("username"),
+                        errorMessage = emailError,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            autoCorrectEnabled = false,
+                            imeAction = ImeAction.Next,
+                        ),
+                        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
                     )
                     KuyTextField(
-                        password, { if (!loading) password = it }, "Kata Sandi",
-                        modifier = Modifier.testTag("password"), errorMessage = passwordError,
+                        password,
+                        {
+                            if (!loading) {
+                                password = it
+                                error = null
+                            }
+                        },
+                        "Kata Sandi",
+                        modifier = Modifier.testTag("password"),
+                        errorMessage = passwordError,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { submit() })
+                        keyboardActions = KeyboardActions(onDone = { submit() }),
                     )
                 }
-                val validationMessage = usernameError ?: passwordError ?: error
+                val validationMessage = emailError ?: passwordError ?: error
                 if (validationMessage != null) {
                     Text(
                         validationMessage, color = KuyError, style = MaterialTheme.typography.bodySmall,
@@ -188,6 +226,15 @@ fun LoginScreen(
             confirmButton = { TextButton(onClick = { notice = null }) { Text("Mengerti") } }
         )
     }
+    KuySuccessPopupOverlay(
+        visible = showSuccessPopup,
+        illustrationRes = R.drawable.masuk_amico,
+        subtitle = "proses masuk akun berhasil",
+        onContinue = {
+            password = ""
+            onLoggedIn()
+        },
+    )
 }
 
 @Composable
@@ -200,24 +247,6 @@ private fun SocialButton(@DrawableRes icon: Int, provider: String, iconSize: Int
             Image(painterResource(icon), "Masuk dengan $provider", Modifier.size(iconSize.dp))
         }
     }
-}
-
-internal fun authErrorMessage(exception: Exception?): String = when (exception) {
-    is FirebaseNetworkException ->
-        "Tidak dapat terhubung ke server. Periksa koneksi internet perangkat, lalu coba lagi."
-    is FirebaseTooManyRequestsException ->
-        "Terlalu banyak percobaan. Tunggu beberapa saat, lalu coba lagi."
-    is FirebaseAuthException -> when (exception.errorCode) {
-        "ERROR_INVALID_EMAIL" -> "Format email tidak valid."
-        "ERROR_WEAK_PASSWORD" -> "Kata sandi terlalu lemah. Gunakan kata sandi yang lebih kuat."
-        "ERROR_EMAIL_ALREADY_IN_USE" -> "Email sudah terdaftar. Silakan masuk dengan akun tersebut."
-        "ERROR_INVALID_CREDENTIAL", "ERROR_WRONG_PASSWORD", "ERROR_USER_NOT_FOUND",
-        "ERROR_INVALID_LOGIN_CREDENTIALS" -> "Email atau kata sandi tidak sesuai."
-        "ERROR_USER_DISABLED" -> "Akun dinonaktifkan. Hubungi pengelola aplikasi."
-        "ERROR_OPERATION_NOT_ALLOWED" -> "Login email dan kata sandi belum tersedia. Hubungi pengelola aplikasi."
-        else -> "Autentikasi gagal. Silakan coba lagi."
-    }
-    else -> "Autentikasi gagal. Silakan coba lagi."
 }
 
 @Preview(name = "Login reference", widthDp = 440, heightDp = 906, showBackground = true)
