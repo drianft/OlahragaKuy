@@ -2,8 +2,6 @@ package com.example.olahragakuy.pages
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,10 +32,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.R
+import com.example.olahragakuy.pages.posts.CommentOverlay
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FieldValue
 
 val HomeNavy = Color(0xFF0A1A2C)
 val HomeBlue = Color(0xFF203F60)
@@ -47,6 +45,7 @@ val HomeText = Color(0xFFE9EDF5)
 @Composable
 fun HomeScreen(onCreatePost: () -> Unit = {}) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeCommentPostId by remember { mutableStateOf<String?>(null) }
     var posts by remember { mutableStateOf<List<DocumentSnapshot>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var feedError by remember { mutableStateOf<String?>(null) }
@@ -195,7 +194,10 @@ fun HomeScreen(onCreatePost: () -> Unit = {}) {
                         caption = post.get("caption") as? String ?: "(Tanpa caption)",
                         imageUrl = (post.get("imageUrl") as? String)?.takeIf { it.isNotBlank() },
                         initialLikes = (post.get("likes") as? Number)?.toLong()?.coerceAtLeast(0) ?: 0L,
+                        initialComment = (post.get("comment") as? Number)?.toLong()?.coerceAtLeast(0) ?: 0L,
+                        initialShare = (post.get("Share") as? Number)?.toLong()?.coerceAtLeast(0) ?: 0L,
                         onAction = { notice = it },
+                        onCommentClick = { activeCommentPostId = post.id },
                     )
                 }
             }
@@ -210,6 +212,12 @@ fun HomeScreen(onCreatePost: () -> Unit = {}) {
             confirmButton = { TextButton(onClick = { notice = null }) { Text("Mengerti") } },
         )
     }
+
+    CommentOverlay(
+        visible = activeCommentPostId != null,
+        postId = activeCommentPostId,
+        onDismiss = { activeCommentPostId = null },
+    )
 }
 
 
@@ -256,7 +264,10 @@ private fun HomePost(
     caption: String,
     imageUrl: String?,
     initialLikes: Long,
+    initialComment: Long,
+    initialShare: Long,
     onAction: (String) -> Unit,
+    onCommentClick: () -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxWidth().background(HomeBlue).padding(20.dp),
@@ -292,18 +303,51 @@ private fun HomePost(
                 },
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             TextButton(onClick = { onAction("Fitur suka belum tersedia.") }) {
-                Text(
-                    "♡  $initialLikes",
-                    color = HomeText, fontSize = 20.sp,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_like),
+                        contentDescription = "Suka",
+                        tint = HomeText,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text("$initialLikes", color = HomeText, fontSize = 14.sp)
+                }
             }
-            TextButton(onClick = { onAction("Fitur komentar belum tersedia.") }) {
-                Text("Komentar", color = HomeText, fontSize = 12.sp)
+            TextButton(onClick = onCommentClick) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_comment),
+                        contentDescription = "Komentar",
+                        tint = HomeText,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text("$initialComment", color = HomeText, fontSize = 12.sp)
+                }
             }
             TextButton(onClick = { onAction("Fitur bagikan belum tersedia.") }) {
-                Text("Bagikan", color = HomeText, fontSize = 12.sp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_share),
+                        contentDescription = "Bagikan",
+                        tint = HomeText,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text("$initialShare", color = HomeText, fontSize = 12.sp)
+                }
             }
         }
     }
