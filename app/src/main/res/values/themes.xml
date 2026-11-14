@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.OlahragaKuy" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.OlahragaKuy" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/kuy_navy</item>
+    </style>
+
+    <style name="Theme.OlahragaKuy.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/kuy_navy</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.OlahragaKuy</item>
+    </style>
 </resources>
