@@ -12,14 +12,18 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.isSpecified
@@ -54,13 +59,11 @@ import com.example.olahragakuy.ui.theme.KuyNavy
 import com.example.olahragakuy.ui.theme.KuyOrange
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 import com.example.olahragakuy.ui.theme.Poppins
-import kotlinx.coroutines.delay
 
 /** The three Figma frames, connected by Smart Animate transitions. */
 enum class OpeningStep { INITIAL, WORDMARK_SHOWN, ONBOARDING }
 
-// Figma: After Delay 800ms -> Smart Animate, Ease Out, 800ms
-private const val INITIAL_DELAY_MS = 800L
+// Figma: Smart Animate, Ease Out, 800ms
 private const val WORDMARK_ANIM_MS = 800
 
 // Figma: On Tap -> Smart Animate, Ease Out, 600ms
@@ -97,7 +100,9 @@ fun OpeningScreen(
 
     LaunchedEffect(Unit) {
         if (step == OpeningStep.INITIAL) {
-            delay(INITIAL_DELAY_MS)
+            // Render the first frame at INITIAL (matching the system splash screen position & scale 1:1),
+            // then immediately animate upward to WORDMARK_SHOWN on the very next frame.
+            withFrameNanos { }
             step = OpeningStep.WORDMARK_SHOWN
         }
     }
@@ -123,24 +128,27 @@ private fun OpeningContent(
 
     val wordmarkPainter = painterResource(R.drawable.login_wordmark)
     val wordmarkAspect = wordmarkPainter.intrinsicSize.let {
-        if (it.isSpecified && it.width > 0f && it.height > 0f) it.width / it.height
+        if (it.isSpecified && (it.width > 0f) && (it.height > 0f)) it.width / it.height
         else DEFAULT_WORDMARK_ASPECT
     }
     // The wordmark is always laid out at its splash size and scaled down via graphicsLayer.
     val splashWordmarkHeight = SplashWordmarkWidth / wordmarkAspect
+    val safeDrawingTop = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
+    val safeDrawingBottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
 
+    // Full-window BoxWithConstraints (no safeDrawingPadding on the root) so that centerX/centerY
+    // match the Android system SplashScreen icon's exact window center (0px jump on handoff).
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(KuyNavy)
-            .safeDrawingPadding(),
+            .background(KuyNavy),
     ) {
         val centerX = maxWidth / 2
         val centerY = maxHeight / 2
 
-        // Header row (step 3): [logo 44dp] 8dp [wordmark 120dp], centered horizontally.
+        // Header row (step 3): [logo 44dp] 8dp [wordmark 120dp], centered horizontally below status bar.
         val headerRowWidth = HeaderLogoSize + HeaderSpacing + HeaderWordmarkWidth
-        val headerCenterY = HeaderTopPadding + HeaderLogoSize / 2
+        val headerCenterY = safeDrawingTop + HeaderTopPadding + HeaderLogoSize / 2
         val headerLogoCenterX = centerX - headerRowWidth / 2 + HeaderLogoSize / 2
         val headerWordmarkCenterX =
             centerX + headerRowWidth / 2 - HeaderWordmarkWidth / 2
@@ -223,6 +231,7 @@ private fun OpeningContent(
                 onRegisterClick = onRegisterClick,
                 modifier = Modifier
                     .fillMaxSize()
+                    .safeDrawingPadding()
                     .offset { IntOffset(0, onboardingOffsetY.roundToPx()) }
                     .graphicsLayer { alpha = onboardingAlpha },
             )
@@ -273,24 +282,27 @@ private fun OpeningContent(
         val ctaSettledHidden = transition.currentState == OpeningStep.ONBOARDING &&
             transition.targetState == OpeningStep.ONBOARDING
         if (!ctaSettledHidden) {
-            Text(
-                text = "Mulai Perjalanan",
-                color = KuyOrange,
-                fontFamily = Poppins,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
-                textDecoration = TextDecoration.Underline,
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 80.dp)
+                    .padding(bottom = safeDrawingBottom + 80.dp)
                     .offset { IntOffset(0, ctaOffsetY.roundToPx()) }
-                    .graphicsLayer { alpha = ctaAlpha }
-                    .clickable(
+                    .graphicsLayer { alpha = ctaAlpha },
+            ) {
+                Text(
+                    text = "Mulai Perjalanan",
+                    color = KuyOrange,
+                    fontFamily = Poppins,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    textDecoration = TextDecoration.Underline,
+                    modifier = Modifier.clickable(
                         enabled = step == OpeningStep.WORDMARK_SHOWN,
                         role = Role.Button,
                         onClick = onStartJourney,
                     ),
-            )
+                )
+            }
         }
     }
 }

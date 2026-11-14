@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/logo_olahragakuy_1"
+    android:insetLeft="20.8%"
+    android:insetTop="20.8%"
+    android:insetRight="20.8%"
+    android:insetBottom="20.8%" />

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Left and right eyes -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M42,30 A7,7 0 1,1 42,44 A7,7 0 1,1 42,30 Z M44,35 A2,2 0 1,0 44,39 A2,2 0 1,0 44,35 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M66,30 A7,7 0 1,1 66,44 A7,7 0 1,1 66,30 Z M64,35 A2,2 0 1,0 64,39 A2,2 0 1,0 64,35 Z" />
+    <!-- Center accent -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M50,44 L58,44 Q58,52 54,54 Q50,52 50,44 Z" />
+    <!-- Upper curved smile arcs -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M29,44 A13,13 0 0,0 54,44"
+        android:strokeWidth="6.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="butt" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,44 A13,13 0 0,0 79,44"
+        android:strokeWidth="6.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="butt" />
+    <!-- Lower arch arcs -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M27,73 A13,13 0 0,1 52,73"
+        android:strokeWidth="6.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="butt" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M56,73 A13,13 0 0,1 81,73"
+        android:strokeWidth="6.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="butt" />
+</vector>
