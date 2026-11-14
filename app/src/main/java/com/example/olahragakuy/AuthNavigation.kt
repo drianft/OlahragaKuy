@@ -105,6 +105,7 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
             HomeScreen(
                 onCreatePost = {
                     navController.navigate("create_post") { launchSingleTop = true }
+                },
             )
         }
         composable("create_post") {

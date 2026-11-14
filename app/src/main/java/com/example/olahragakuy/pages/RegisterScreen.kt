@@ -250,3 +250,19 @@ private fun RegisterSocialButton(
 private fun RegisterPreview() {
     OlahragaKuyTheme { RegisterScreen(onBack = {}, onRegistered = {}) }
 }
+
+private fun authErrorMessage(exception: Exception?): String {
+    return when (exception) {
+        is com.google.firebase.auth.FirebaseAuthUserCollisionException ->
+            "Email sudah terdaftar. Gunakan email lain atau masuk."
+        is com.google.firebase.auth.FirebaseAuthWeakPasswordException ->
+            "Kata sandi terlalu lemah. Gunakan minimal 6 karakter."
+        is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException ->
+            "Format email tidak valid."
+        is com.google.firebase.FirebaseNetworkException ->
+            "Koneksi internet bermasalah. Periksa jaringan Anda."
+        else ->
+            exception?.localizedMessage ?: "Gagal mendaftar. Silakan coba lagi."
+    }
+}
+
