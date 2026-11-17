@@ -96,12 +96,8 @@ fun CommentOverlay(
     var loadError by remember(postId) { mutableStateOf<String?>(null) }
     var sendError by remember(postId) { mutableStateOf<String?>(null) }
     var retry by remember(postId) { mutableIntStateOf(0) }
-    val currentUser = remember { FirebaseAuth.getInstance().currentUser }
-    val currentUserName = remember {
-        currentUser?.displayName?.takeIf { it.isNotBlank() }
-            ?: currentUser?.email?.substringBefore("@")
-            ?: "Pengguna"
-    }
+    val currentUser = remember { currentUserOrNull() }
+    val currentUserName = remember(currentUser) { currentUser.resolveDisplayName("Pengguna") }
 
     // Listen to Firestore comments for this post
     DisposableEffect(postId, retry) {
@@ -207,6 +203,17 @@ fun CommentOverlay(
                 ))
                 .commit()
                 .addOnSuccessListener {
+                    postRef.get().addOnSuccessListener { postSnap ->
+                        val recipientUid = postSnap.getString("authorId").orEmpty().ifBlank { user.uid }
+                        sendPostNotification(
+                            db = db,
+                            recipientUid = recipientUid,
+                            actorId = user.uid,
+                            actorName = currentUserName.take(100),
+                            postId = postId,
+                            type = NotificationType.COMMENT,
+                        )
+                    }
                     newCommentText = ""
                     replyTarget = null
                     sending = false

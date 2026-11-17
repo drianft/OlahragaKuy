@@ -14,7 +14,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.olahragakuy.pages.HomeScreen
+import com.example.olahragakuy.pages.posts.ChatScreen
 import com.example.olahragakuy.pages.posts.CreatePostScreen
+import com.example.olahragakuy.pages.posts.NotificationScreen
+import com.example.olahragakuy.pages.posts.SearchPostScreen
 import com.example.olahragakuy.pages.LoginScreen
 import com.example.olahragakuy.pages.OpeningScreen
 import com.example.olahragakuy.pages.RegisterScreen
@@ -106,12 +109,36 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                 onCreatePost = {
                     navController.navigate("create_post") { launchSingleTop = true }
                 },
+                onSearchClick = {
+                    navController.navigate("search_posts") { launchSingleTop = true }
+                },
+                onNotificationClick = {
+                    navController.navigate("notifications") { launchSingleTop = true }
+                },
+                onChatClick = {
+                    navController.navigate("chat") { launchSingleTop = true }
+                },
             )
         }
         composable("create_post") {
             CreatePostScreen(
                 onBack = { navController.popBackStack() },
                 onPosted = { navController.popBackStack() },
+            )
+        }
+        composable("search_posts") {
+            SearchPostScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable("notifications") {
+            NotificationScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable("chat") {
+            ChatScreen(
+                onBack = { navController.popBackStack() },
             )
         }
     }

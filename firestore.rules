@@ -1,0 +1,242 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users/{userId}
+// Fields:
+//   - displayName: string (optional, 1..100 chars)
+//   - followersCount: int (optional, >= 0)
+//   - followingCount: int (optional, >= 0)
+//   - postsCount: int (optional, >= 0)
+//
+// Subcollection: users/{userId}/following/{friendId}
+// Fields:
+//   - uid: string (optional, 1..128 chars)
+//   - displayName / name / username: string (optional, 1..100 chars)
+//   - photoUrl / avatarUrl: string (optional, <= 1000 chars)
+//
+// Subcollection: users/{userId}/notifications/{notificationId}
+// Fields:
+//   - actorId: string (required, == request.auth.uid)
+//   - actorName: string (required, 1..100 chars)
+//   - postId: string (required, 1..100 chars)
+//   - type: string (required, in ['LIKE', 'COMMENT', 'TAG'])
+//   - createdAt: timestamp (required, == request.time)
+//
+// Collection: posts/{postId}
+// Fields:
+//   - authorId: string (required, == request.auth.uid, immutable)
+//   - authorName: string (required, 1..100 chars, immutable)
+//   - caption: string (required, 0..2000 chars, immutable)
+//   - category: string (optional, 0..200 chars, immutable)
+//   - searchKeywords: list<string> (optional, <= 100 items, immutable)
+//   - imageUrl: string (optional, <= 1000 chars, immutable)
+//   - taggedFriendIds: list<string> (optional, <= 50 items, immutable)
+//   - taggedFriends: list<map> (optional, <= 50 items, immutable)
+//   - likes: int (optional, >= 0)
+//   - likedByIds: list<string> (optional, <= 500 items)
+//   - likedByNames: list<string> (optional, <= 500 items)
+//   - comment: int (optional, >= 0)
+//   - lastCommentId: string (optional, 20 chars)
+//   - Share: int (optional, >= 0)
+//   - createdAt: timestamp (required, == request.time, immutable)
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidNotification(data) {
+      return hasRequiredFields(['actorId', 'actorName', 'postId', 'type', 'createdAt'])
+        && hasOnlyAllowedFields(['actorId', 'actorName', 'postId', 'type', 'createdAt'])
+        && data.actorId is string
+        && data.actorId == request.auth.uid
+        && data.actorName is string
+        && data.actorName.size() > 0
+        && data.actorName.size() <= 100
+        && data.postId is string
+        && data.postId.size() > 0
+        && data.postId.size() <= 100
+        && data.type in ['LIKE', 'COMMENT', 'TAG']
+        && data.createdAt is timestamp
+        && data.createdAt == request.time;
+    }
+
+    function isValidPostCreate(data) {
+      return hasRequiredFields(['authorId', 'authorName', 'caption', 'createdAt'])
+        && hasOnlyAllowedFields([
+          'authorId', 'authorName', 'caption', 'category', 'searchKeywords',
+          'imageUrl', 'taggedFriendIds', 'taggedFriends', 'createdAt',
+          'likes', 'likedByIds', 'likedByNames', 'comment', 'Share'
+        ])
+        && data.authorId is string
+        && data.authorId == request.auth.uid
+        && data.authorName is string
+        && data.authorName.size() > 0
+        && data.authorName.size() <= 100
+        && data.caption is string
+        && data.caption.size() <= 2000
+        && (!('category' in data) || (data.category is string && data.category.size() <= 200))
+        && (!('searchKeywords' in data) || (data.searchKeywords is list && data.searchKeywords.size() <= 100))
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1000))
+        && (!('taggedFriendIds' in data) || (data.taggedFriendIds is list && data.taggedFriendIds.size() <= 50))
+        && (!('taggedFriends' in data) || (data.taggedFriends is list && data.taggedFriends.size() <= 50))
+        && data.createdAt is timestamp
+        && data.createdAt == request.time;
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(userId)
+        && hasOnlyAllowedFields(['displayName', 'username', 'name', 'photoUrl', 'avatarUrl', 'followersCount', 'followingCount', 'postsCount', 'updatedAt']);
+      allow delete: if false;
+
+      match /following/{friendId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && hasOnlyAllowedFields(['uid', 'displayName', 'name', 'username', 'photoUrl', 'avatarUrl', 'createdAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      match /notifications/{notificationId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isAuthenticated() && isValidNotification(request.resource.data);
+      }
+    }
+
+    match /posts/{postId} {
+      function validCommentIncrement() {
+        let next = request.resource.data;
+        let commentPath = /databases/$(database)/documents/posts/$(postId)/comments/$(next.lastCommentId);
+        return isAuthenticated()
+          && next.diff(resource.data).affectedKeys().hasOnly(['comment', 'lastCommentId'])
+          && next.lastCommentId is string
+          && next.lastCommentId.matches('^[a-zA-Z0-9]{20}$')
+          && next.comment is int
+          && next.comment == resource.data.get('comment', 0) + 1
+          && !exists(commentPath)
+          && getAfter(commentPath).data.authorId == request.auth.uid
+          && getAfter(commentPath).data.createdAt == request.time;
+      }
+
+      function validPostLikeUpdate() {
+        let next = request.resource.data;
+        return isAuthenticated()
+          && next.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedByIds', 'likedByNames'])
+          && next.likes is int
+          && next.likes >= 0
+          && math.abs(next.likes - resource.data.get('likes', 0)) <= 1
+          && next.likedByIds is list
+          && next.likedByIds.size() <= 500
+          && next.likedByNames is list
+          && next.likedByNames.size() <= 500;
+      }
+
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPostCreate(request.resource.data);
+      allow update: if validCommentIncrement() || validPostLikeUpdate();
+      allow delete: if false;
+
+      match /comments/{commentId} {
+        function validReply() {
+          let data = request.resource.data;
+          let target = /databases/$(database)/documents/posts/$(postId)/comments/$(data.replyToCommentId);
+          return data.replyToCommentId is string
+            && data.replyToCommentId.matches('^[a-zA-Z0-9]{20}$')
+            && data.replyToCommentId != commentId
+            && exists(target)
+            && data.replyToAuthorId is string
+            && data.replyToAuthorId.size() > 0
+            && data.replyToAuthorId == get(target).data.authorId
+            && data.replyToAuthorName is string
+            && data.replyToAuthorName == get(target).data.authorName;
+        }
+
+        allow read: if isAuthenticated();
+
+        allow create: if isAuthenticated()
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && request.resource.data.keys().hasAll(['authorId', 'authorName', 'text', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['authorId', 'authorName', 'text', 'createdAt', 'replyToCommentId', 'replyToAuthorId', 'replyToAuthorName'])
+          && (
+            !request.resource.data.keys().hasAny(['replyToCommentId', 'replyToAuthorId', 'replyToAuthorName'])
+            || (request.resource.data.keys().hasAll(['replyToCommentId', 'replyToAuthorId', 'replyToAuthorName']) && validReply())
+          )
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.authorName is string
+          && request.resource.data.authorName.size() > 0
+          && request.resource.data.authorName.size() <= 100
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000
+          && request.resource.data.text.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.createdAt == request.time
+          && getAfter(/databases/$(database)/documents/posts/$(postId)).data.lastCommentId == commentId
+          && getAfter(/databases/$(database)/documents/posts/$(postId)).data.comment
+            == get(/databases/$(database)/documents/posts/$(postId)).data.get('comment', 0) + 1;
+
+        allow update, delete: if false;
+
+        match /likes/{userId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated()
+            && request.auth.uid == userId
+            && exists(/databases/$(database)/documents/posts/$(postId)/comments/$(commentId))
+            && request.resource.data.keys().hasAll(['createdAt'])
+            && request.resource.data.keys().hasOnly(['createdAt'])
+            && request.resource.data.createdAt is timestamp
+            && request.resource.data.createdAt == request.time;
+          allow delete: if isAuthenticated() && request.auth.uid == userId;
+          allow update: if false;
+        }
+      }
+    }
+
+    match /chats/{chatId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated()
+        && hasOnlyAllowedFields([
+          'name', 'isGroup', 'statusOrMembers', 'lastMessage',
+          'dateLabel', 'participantIds', 'participantNames', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.isGroup is bool;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated()
+          && hasRequiredFields(['senderId', 'senderName', 'text', 'createdAt'])
+          && hasOnlyAllowedFields(['senderId', 'senderName', 'text', 'timeText', 'createdAt'])
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderName is string
+          && request.resource.data.senderName.size() > 0
+          && request.resource.data.senderName.size() <= 100
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000;
+        allow update, delete: if false;
+      }
+    }
+  }
+}
