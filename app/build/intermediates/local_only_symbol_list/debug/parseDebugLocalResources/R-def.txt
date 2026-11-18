@@ -9,6 +9,7 @@ color teal_700
 color white
 drawable ic_launcher_background
 drawable ic_launcher_foreground
+drawable img_logout_illustration
 drawable login_back
 drawable login_facebook
 drawable login_google

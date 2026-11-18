@@ -7,6 +7,7 @@ int color teal_700 0x0
 int color white 0x0
 int drawable ic_launcher_background 0x0
 int drawable ic_launcher_foreground 0x0
+int drawable img_logout_illustration 0x0
 int drawable login_back 0x0
 int drawable login_facebook 0x0
 int drawable login_google 0x0
