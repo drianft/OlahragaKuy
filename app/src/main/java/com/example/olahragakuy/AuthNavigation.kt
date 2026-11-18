@@ -9,6 +9,12 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -18,6 +24,9 @@ import com.example.olahragakuy.pages.LoginScreen
 import com.example.olahragakuy.pages.OpeningScreen
 import com.example.olahragakuy.pages.RegisterScreen
 import com.example.olahragakuy.ui.theme.KuyNavy
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.firestore.FirebaseFirestore
 
 // Figma: Login -> Home uses Dissolve, Ease Out, 300ms.
 private const val HOME_DISSOLVE_MS = 300
@@ -25,6 +34,52 @@ private const val HOME_DISSOLVE_MS = 300
 @Composable
 fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
     val navController = rememberNavController()
+    var currentUserRole by rememberSaveable { mutableStateOf("member") }
+    var prefilledEmail by rememberSaveable { mutableStateOf("") }
+    val startDestination = remember {
+        if (FirebaseAuth.getInstance().currentUser != null) "home" else "opening"
+    }
+
+    LaunchedEffect(Unit) {
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            currentUser.reload().addOnCompleteListener { reloadTask ->
+                if (!reloadTask.isSuccessful && reloadTask.exception is FirebaseAuthInvalidUserException) {
+                    FirebaseAuth.getInstance().signOut()
+                    navController.navigate("opening") {
+                        popUpTo(0) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                } else if (reloadTask.isSuccessful) {
+                    FirebaseFirestore.getInstance()
+                        .collection("users")
+                        .document(currentUser.uid)
+                        .get()
+                        .addOnSuccessListener { doc ->
+                            val role = doc.getString("role") ?: "member"
+                            if (role != "admin" && !currentUser.isEmailVerified) {
+                                FirebaseAuth.getInstance().signOut()
+                                navController.navigate("opening") {
+                                    popUpTo(0) { inclusive = true }
+                                    launchSingleTop = true
+                                }
+                            } else {
+                                currentUserRole = role
+                            }
+                        }
+                        .addOnFailureListener {
+                            if (!currentUser.isEmailVerified) {
+                                FirebaseAuth.getInstance().signOut()
+                                navController.navigate("opening") {
+                                    popUpTo(0) { inclusive = true }
+                                    launchSingleTop = true
+                                }
+                            }
+                        }
+                }
+            }
+        }
+    }
 
     val navigateToLogin: () -> Unit = {
         navController.navigate("login") {
@@ -35,7 +90,7 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
 
     NavHost(
         navController = navController,
-        startDestination = "opening",
+        startDestination = startDestination,
         modifier = modifier.fillMaxSize().background(KuyNavy),
         // Keep both screens opaque so the window never shows through a crossfade.
         enterTransition = {
@@ -70,15 +125,26 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
         composable("opening") {
             // Opening stays in the back stack so Back from Login/Register returns to onboarding.
             OpeningScreen(
-                onLoginClick = { navController.navigate("login") { launchSingleTop = true } },
+                onLoginClick = {
+                    if (FirebaseAuth.getInstance().currentUser != null) {
+                        navController.navigate("home") {
+                            popUpTo("opening") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    } else {
+                        navController.navigate("login") { launchSingleTop = true }
+                    }
+                },
                 onRegisterClick = { navController.navigate("register") { launchSingleTop = true } },
             )
         }
         composable("login") {
             LoginScreen(
+                initialEmail = prefilledEmail,
                 onBack = { if (!navController.popBackStack()) onExit() },
                 onRegistered = { navController.navigate("register") { launchSingleTop = true } },
-                onLoggedIn = {
+                onLoggedIn = { role ->
+                    currentUserRole = role
                     navController.navigate("home") {
                         popUpTo("opening") { inclusive = true }
                     }
@@ -90,6 +156,7 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                 onBack = { navController.popBackStack() },
                 onRegistered = navigateToLogin,
                 onLogin = navigateToLogin,
+                onRegisteredWithEmail = { prefilledEmail = it },
             )
         }
         composable(

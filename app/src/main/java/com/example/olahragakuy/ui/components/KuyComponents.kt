@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,11 +23,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
@@ -41,10 +51,19 @@ fun KuyPrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean
 ) {
-    Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(60.dp),
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth().height(60.dp),
         shape = RoundedCornerShape(36.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = KuyButton, contentColor = KuyText),
-        contentPadding = PaddingValues(10.dp)) {
+        colors = ButtonDefaults.buttonColors(
+            containerColor = KuyButton,
+            contentColor = KuyText,
+            disabledContainerColor = KuyButton.copy(alpha = 0.5f),
+            disabledContentColor = KuyText.copy(alpha = 0.6f),
+        ),
+        contentPadding = PaddingValues(10.dp),
+    ) {
         Text(text, style = MaterialTheme.typography.labelLarge)
     }
 }
@@ -55,11 +74,16 @@ fun KuyTextField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
+    contentType: ContentType? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     BasicTextField(value = value, onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth().height(60.dp).semantics {
             contentDescription = label
-            errorMessage?.let { error(it) }
+            if (contentType != null) {
+                this.contentType = contentType
+            }
+            errorMessage?.let { if (it.isNotEmpty()) error(it) }
         }, singleLine = true,
         textStyle = MaterialTheme.typography.bodySmall.copy(color = KuyText),
         cursorBrush = SolidColor(KuyOrange), visualTransformation = visualTransformation,
@@ -67,12 +91,98 @@ fun KuyTextField(
         decorationBox = { innerTextField ->
             Surface(shape = RoundedCornerShape(12.dp), color = KuyNavy,
                 border = BorderStroke(1.dp, if (errorMessage == null) KuyButton else KuyError)) {
-                Box(Modifier.fillMaxSize().padding(horizontal = 10.dp), contentAlignment = Alignment.CenterStart) {
-                    if (value.isEmpty()) Text(label, style = MaterialTheme.typography.bodySmall, color = KuyText)
-                    innerTextField()
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        if (value.isEmpty()) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = KuyText.copy(alpha = 0.55f),
+                            )
+                            innerTextField()
+                        } else {
+                            Column(verticalArrangement = Arrangement.Center) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = 10.sp,
+                                        lineHeight = 12.sp,
+                                    ),
+                                    color = if (errorMessage == null) KuyOrange else KuyError,
+                                )
+                                innerTextField()
+                            }
+                        }
+                    }
+                    if (trailingContent != null) {
+                        Spacer(Modifier.width(8.dp))
+                        trailingContent()
+                    }
                 }
             }
         })
+}
+
+@Composable
+fun KuyPasswordVisibilityToggle(
+    visible: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val description = if (visible) "Sembunyikan kata sandi" else "Lihat kata sandi"
+    val iconColor = if (visible) KuyOrange else KuyText.copy(alpha = 0.8f)
+
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .semantics {
+                contentDescription = description
+                role = Role.Button
+            }
+            .clickable(
+                enabled = enabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onToggle,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(22.dp)) {
+            val w = size.width
+            val h = size.height
+            val strokeWidth = 1.8.dp.toPx()
+            val eyePath = Path().apply {
+                moveTo(w * 0.08f, h * 0.5f)
+                quadraticTo(w * 0.5f, h * 0.14f, w * 0.92f, h * 0.5f)
+                quadraticTo(w * 0.5f, h * 0.86f, w * 0.08f, h * 0.5f)
+                close()
+            }
+            drawPath(
+                path = eyePath,
+                color = iconColor,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
+            drawCircle(
+                color = iconColor,
+                radius = w * 0.14f,
+                center = Offset(w * 0.5f, h * 0.5f),
+                style = Stroke(width = strokeWidth),
+            )
+            if (!visible) {
+                drawLine(
+                    color = iconColor,
+                    start = Offset(w * 0.18f, h * 0.82f),
+                    end = Offset(w * 0.82f, h * 0.18f),
+                    strokeWidth = strokeWidth,
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
+    }
 }
 
 private const val POPUP_ENTER_MS = 600

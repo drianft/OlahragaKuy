@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -28,10 +29,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.olahragakuy.R
+import com.example.olahragakuy.ui.components.KuyPasswordVisibilityToggle
 import com.example.olahragakuy.ui.components.KuyPrimaryButton
 import com.example.olahragakuy.ui.components.KuySuccessPopupOverlay
 import com.example.olahragakuy.ui.components.KuyTextField
@@ -41,25 +44,36 @@ import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
 
 /** Figma Login 5:2002. Android supplies its own status and navigation bars. */
 @Composable
 fun LoginScreen(
     onBack: () -> Unit = {},
     onRegistered: () -> Unit = {},
-    onLoggedIn: () -> Unit = {},
+    onLoggedIn: (String) -> Unit = {},
+    initialEmail: String = "",
 ) {
-    var email by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf(initialEmail) }
+    LaunchedEffect(initialEmail) {
+        if (initialEmail.isNotBlank() && email.isBlank()) {
+            email = initialEmail
+        }
+    }
     // Password stays in memory; never serialize it to saved-instance-state.
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     var attempted by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var credentialsError by remember { mutableStateOf(false) }
     var serverEmailError by remember { mutableStateOf<String?>(null) }
     var serverPasswordError by remember { mutableStateOf<String?>(null) }
     var noticeTitle by remember { mutableStateOf("Belum tersedia") }
     var notice by remember { mutableStateOf<String?>(null) }
     var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
+    var loggedInRole by rememberSaveable { mutableStateOf("member") }
 
     var showForgotPasswordDialog by rememberSaveable { mutableStateOf(false) }
     var resetEmail by rememberSaveable { mutableStateOf("") }
@@ -86,38 +100,88 @@ fun LoginScreen(
         attempted = true
         serverEmailError = null
         serverPasswordError = null
+        credentialsError = false
         error = null
         val trimmedEmail = email.trim()
         val isEmailValid = trimmedEmail.isNotEmpty() && Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()
         if (isEmailValid && password.isNotEmpty() && !loading) {
             focus.clearFocus()
+            passwordVisible = false
             loading = true
 
             FirebaseAuth.getInstance()
                 .signInWithEmailAndPassword(trimmedEmail, password)
                 .addOnCompleteListener { task ->
-                    loading = false
-                    if (task.isSuccessful && task.result?.user != null) {
-                        attempted = false
-                        showSuccessPopup = true
+                    val user = if (task.isSuccessful) task.result?.user else null
+                    if (user != null) {
+                        val userDocRef = FirebaseFirestore.getInstance()
+                            .collection("users")
+                            .document(user.uid)
+                        userDocRef.get()
+                            .addOnSuccessListener { doc ->
+                                val role = doc.getString("role") ?: "member"
+                                if (role != "admin" && !user.isEmailVerified) {
+                                    user.sendEmailVerification().addOnCompleteListener {
+                                        FirebaseAuth.getInstance().signOut()
+                                        loading = false
+                                        noticeTitle = "Verifikasi Email Diperlukan"
+                                        notice = "Email Anda belum diverifikasi. Tautan verifikasi baru telah dikirim ke kotak masuk atau folder spam email Anda. Silakan klik tautan tersebut terlebih dahulu sebelum masuk."
+                                    }
+                                } else {
+                                    if (!doc.exists()) {
+                                        val defaultUsername = user.displayName
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?: (user.email ?: trimmedEmail).substringBefore("@")
+                                        userDocRef.set(
+                                            mapOf(
+                                                "uid" to user.uid,
+                                                "username" to defaultUsername,
+                                                "email" to (user.email ?: trimmedEmail),
+                                                "role" to role,
+                                                "createdAt" to FieldValue.serverTimestamp(),
+                                            ),
+                                        )
+                                    }
+                                    loading = false
+                                    attempted = false
+                                    loggedInRole = role
+                                    showSuccessPopup = true
+                                }
+                            }
+                            .addOnFailureListener {
+                                if (!user.isEmailVerified) {
+                                    user.sendEmailVerification().addOnCompleteListener {
+                                        FirebaseAuth.getInstance().signOut()
+                                        loading = false
+                                        noticeTitle = "Verifikasi Email Diperlukan"
+                                        notice = "Email Anda belum diverifikasi. Tautan verifikasi baru telah dikirim ke kotak masuk atau folder spam email Anda. Silakan klik tautan tersebut terlebih dahulu sebelum masuk."
+                                    }
+                                } else {
+                                    loading = false
+                                    attempted = false
+                                    loggedInRole = "member"
+                                    showSuccessPopup = true
+                                }
+                            }
                     } else {
+                        loading = false
                         when (val exception = task.exception) {
                             is FirebaseAuthInvalidUserException -> {
-                                serverEmailError = when (exception.errorCode) {
-                                    "ERROR_USER_DISABLED" ->
-                                        "Akun dengan email ini telah dinonaktifkan."
-                                    else ->
-                                        "Email belum terdaftar. Silakan daftar terlebih dahulu."
+                                if (exception.errorCode == "ERROR_USER_DISABLED") {
+                                    serverEmailError = "Akun dengan email ini telah dinonaktifkan."
+                                } else {
+                                    credentialsError = true
+                                    error = "Email atau kata sandi yang Anda masukkan salah."
                                 }
                             }
                             is FirebaseAuthInvalidCredentialsException -> {
                                 when (exception.errorCode) {
                                     "ERROR_INVALID_EMAIL" ->
                                         serverEmailError = "Masukkan format email yang valid untuk masuk."
-                                    "ERROR_WRONG_PASSWORD" ->
-                                        serverPasswordError = "Kata sandi salah. Periksa kembali kata sandi Anda."
-                                    else ->
-                                        error = "Email belum terdaftar atau kata sandi salah. Periksa kembali atau daftar akun baru."
+                                    else -> {
+                                        credentialsError = true
+                                        error = "Email atau kata sandi yang Anda masukkan salah."
+                                    }
                                 }
                             }
                             is FirebaseNetworkException ->
@@ -147,17 +211,16 @@ fun LoginScreen(
                 .sendPasswordResetEmail(trimmedResetEmail)
                 .addOnCompleteListener { task ->
                     resetLoading = false
-                    if (task.isSuccessful) {
+                    val exception = task.exception
+                    if (task.isSuccessful || (exception is FirebaseAuthInvalidUserException && exception.errorCode != "ERROR_USER_DISABLED")) {
                         email = trimmedResetEmail
                         showForgotPasswordDialog = false
                         noticeTitle = "Email Terkirim"
-                        notice = "Kode/tautan pemulihan kata sandi telah dikirim ke $trimmedResetEmail. Silakan periksa kotak masuk atau folder spam Anda."
+                        notice = "Jika email terdaftar, tautan pemulihan kata sandi telah dikirim ke $trimmedResetEmail. Silakan periksa kotak masuk atau folder spam Anda."
                     } else {
-                        resetEmailError = when (val exception = task.exception) {
-                            is FirebaseAuthInvalidUserException -> when (exception.errorCode) {
-                                "ERROR_USER_DISABLED" -> "Akun dengan email ini telah dinonaktifkan."
-                                else -> "Email belum terdaftar. Silakan daftar terlebih dahulu."
-                            }
+                        resetEmailError = when (exception) {
+                            is FirebaseAuthInvalidUserException ->
+                                "Akun dengan email ini telah dinonaktifkan."
                             is FirebaseAuthInvalidCredentialsException ->
                                 "Masukkan format email yang valid."
                             is FirebaseNetworkException ->
@@ -222,36 +285,48 @@ fun LoginScreen(
                         email,
                         {
                             if (!loading) {
-                                email = it
+                                email = it.take(254)
                                 serverEmailError = null
+                                credentialsError = false
                                 error = null
                             }
                         },
                         "Email",
                         modifier = Modifier.testTag("username"),
-                        errorMessage = emailError,
+                        errorMessage = emailError ?: if (credentialsError) "" else null,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
                             autoCorrectEnabled = false,
                             imeAction = ImeAction.Next,
                         ),
                         keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
+                        contentType = ContentType.EmailAddress,
                     )
                     KuyTextField(
                         password,
                         {
                             if (!loading) {
-                                password = it
+                                password = it.take(128)
                                 serverPasswordError = null
+                                credentialsError = false
                                 error = null
                             }
                         },
                         "Kata Sandi",
                         modifier = Modifier.testTag("password"),
-                        errorMessage = passwordError,
-                        visualTransformation = PasswordVisualTransformation(),
+                        errorMessage = passwordError ?: if (credentialsError) "" else null,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { submit() }),
+                        contentType = ContentType.Password,
+                        trailingContent = {
+                            KuyPasswordVisibilityToggle(
+                                visible = passwordVisible,
+                                onToggle = { if (!loading) passwordVisible = !passwordVisible },
+                                enabled = !loading,
+                                modifier = Modifier.testTag("password-toggle"),
+                            )
+                        },
                     )
                 }
                 Box(
@@ -346,7 +421,7 @@ fun LoginScreen(
                         value = resetEmail,
                         onValueChange = {
                             if (!resetLoading) {
-                                resetEmail = it
+                                resetEmail = it.take(254)
                                 resetEmailError = null
                             }
                         },
@@ -359,6 +434,7 @@ fun LoginScreen(
                             imeAction = ImeAction.Done,
                         ),
                         keyboardActions = KeyboardActions(onDone = { submitResetPassword() }),
+                        contentType = ContentType.EmailAddress,
                     )
                     resetEmailError?.let { errMsg ->
                         Text(
@@ -399,9 +475,18 @@ fun LoginScreen(
     }
     notice?.let { message ->
         AlertDialog(
-            onDismissRequest = { notice = null }, title = { Text(noticeTitle) },
-            text = { Text(message) },
-            confirmButton = { TextButton(onClick = { notice = null }) { Text("Mengerti") } }
+            onDismissRequest = { notice = null },
+            containerColor = KuyNavy,
+            titleContentColor = KuyOrange,
+            textContentColor = KuyText,
+            title = { Text(noticeTitle, color = KuyOrange, style = MaterialTheme.typography.titleLarge) },
+            text = { Text(message, color = KuyText, style = MaterialTheme.typography.bodySmall) },
+            confirmButton = {
+                TextButton(
+                    onClick = { notice = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = KuyOrange),
+                ) { Text("Mengerti") }
+            },
         )
     }
     KuySuccessPopupOverlay(
@@ -410,7 +495,7 @@ fun LoginScreen(
         subtitle = "proses masuk akun berhasil",
         onContinue = {
             password = ""
-            onLoggedIn()
+            onLoggedIn(loggedInRole)
         },
     )
 }
