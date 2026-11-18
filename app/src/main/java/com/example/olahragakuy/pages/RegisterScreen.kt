@@ -1,5 +1,6 @@
 package com.example.olahragakuy.pages
 
+import android.util.Patterns
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -32,7 +33,12 @@ import com.example.olahragakuy.R
 import com.example.olahragakuy.ui.components.KuySuccessPopupOverlay
 import com.example.olahragakuy.ui.components.KuyTextField
 import com.example.olahragakuy.ui.theme.*
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.UserProfileChangeRequest
 
 @Composable
@@ -46,51 +52,94 @@ fun RegisterScreen(
     // Passwords deliberately stay out of saved instance state.
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
+    var attempted by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var serverEmailError by remember { mutableStateOf<String?>(null) }
+    var serverPasswordError by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     var profileWarning by remember { mutableStateOf(false) }
     var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
     val focus = LocalFocusManager.current
 
+    val usernameError = if (attempted && username.isBlank()) "Isi nama pengguna terlebih dahulu." else null
+    val emailError = when {
+        serverEmailError != null -> serverEmailError
+        !attempted -> null
+        email.isBlank() -> "Isi email terlebih dahulu."
+        !Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches() ->
+            "Masukkan format email yang valid untuk mendaftar."
+        else -> null
+    }
+    val passwordError = when {
+        serverPasswordError != null -> serverPasswordError
+        !attempted -> null
+        password.isEmpty() -> "Isi kata sandi terlebih dahulu."
+        password.length < 6 -> "Kata sandi minimal 6 karakter."
+        else -> null
+    }
+    val confirmationError = when {
+        !attempted -> null
+        confirmation.isEmpty() -> "Isi konfirmasi kata sandi terlebih dahulu."
+        password != confirmation -> "Kedua kata sandi harus sama."
+        else -> null
+    }
+
     val submit: () -> Unit = {
-        if (!loading) {
-            error = when {
-                username.isBlank() -> "Isi nama pengguna terlebih dahulu."
-                email.isBlank() -> "Isi email terlebih dahulu."
-                password.length < 6 -> "Kata sandi minimal 6 karakter."
-                password != confirmation -> "Kedua kata sandi harus sama."
-                else -> null
-            }
-            if (error == null) {
-                focus.clearFocus()
-                val displayName = username.trim()
-                loading = true
-                confirmation = ""
-                FirebaseAuth.getInstance()
-                    .createUserWithEmailAndPassword(email.trim(), password)
-                    .addOnCompleteListener { result ->
-                        if (result.isSuccessful) {
-                            password = ""
-                            val user = result.result.user
-                            if (user != null) {
-                                user.updateProfile(
-                                    UserProfileChangeRequest.Builder().setDisplayName(displayName).build()
-                                ).addOnCompleteListener { profileResult ->
-                                    loading = false
-                                    if (profileResult.isSuccessful) showSuccessPopup = true
-                                    else profileWarning = true
-                                }
-                            } else {
+        attempted = true
+        serverEmailError = null
+        serverPasswordError = null
+        error = null
+
+        val trimmedUsername = username.trim()
+        val trimmedEmail = email.trim()
+        val isEmailValid = trimmedEmail.isNotEmpty() && Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()
+        val isFormValid = trimmedUsername.isNotEmpty() &&
+            isEmailValid &&
+            password.length >= 6 &&
+            password == confirmation
+
+        if (isFormValid && !loading) {
+            focus.clearFocus()
+            loading = true
+            FirebaseAuth.getInstance()
+                .createUserWithEmailAndPassword(trimmedEmail, password)
+                .addOnCompleteListener { result ->
+                    if (result.isSuccessful) {
+                        attempted = false
+                        password = ""
+                        confirmation = ""
+                        val user = result.result.user
+                        if (user != null) {
+                            user.updateProfile(
+                                UserProfileChangeRequest.Builder().setDisplayName(trimmedUsername).build(),
+                            ).addOnCompleteListener { profileResult ->
                                 loading = false
-                                showSuccessPopup = true
+                                if (profileResult.isSuccessful) showSuccessPopup = true
+                                else profileWarning = true
                             }
                         } else {
                             loading = false
-                            error = "Pendaftaran gagal. Periksa email dan kata sandi, lalu coba lagi."
+                            showSuccessPopup = true
+                        }
+                    } else {
+                        loading = false
+                        when (result.exception) {
+                            is FirebaseAuthUserCollisionException ->
+                                serverEmailError = "Email sudah terdaftar. Silakan masuk atau gunakan email lain."
+                            is FirebaseAuthWeakPasswordException ->
+                                serverPasswordError = "Kata sandi terlalu lemah. Gunakan minimal 6 karakter."
+                            is FirebaseAuthInvalidCredentialsException ->
+                                serverEmailError = "Masukkan format email yang valid untuk mendaftar."
+                            is FirebaseNetworkException ->
+                                error = "Koneksi internet bermasalah. Periksa jaringan Anda."
+                            is FirebaseTooManyRequestsException ->
+                                error = "Terlalu banyak percobaan pendaftaran. Coba lagi nanti."
+                            else ->
+                                error = "Pendaftaran gagal. Periksa email dan kata sandi, lalu coba lagi."
                         }
                     }
-            }
+                }
         }
     }
 
@@ -136,38 +185,77 @@ fun RegisterScreen(
             Spacer(Modifier.height(45.dp))
             Column(verticalArrangement = Arrangement.spacedBy(21.dp)) {
                 KuyTextField(
-                    username, { if (!loading) username = it }, "Nama Pengguna",
+                    username,
+                    {
+                        if (!loading) {
+                            username = it
+                            error = null
+                        }
+                    },
+                    "Nama Pengguna",
                     modifier = Modifier.testTag("register-username"),
+                    errorMessage = usernameError,
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
                 )
                 KuyTextField(
-                    email, { if (!loading) email = it }, "Email",
+                    email,
+                    {
+                        if (!loading) {
+                            email = it
+                            serverEmailError = null
+                            error = null
+                        }
+                    },
+                    "Email",
                     modifier = Modifier.testTag("register-email"),
+                    errorMessage = emailError,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Email, autoCorrectEnabled = false, imeAction = ImeAction.Next,
                     ),
                     keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
                 )
                 KuyTextField(
-                    password, { if (!loading) password = it }, "Kata Sandi",
+                    password,
+                    {
+                        if (!loading) {
+                            password = it
+                            serverPasswordError = null
+                            error = null
+                        }
+                    },
+                    "Kata Sandi",
                     modifier = Modifier.testTag("register-password"),
+                    errorMessage = passwordError,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
                 )
                 KuyTextField(
-                    confirmation, { if (!loading) confirmation = it }, "Konfirmasi Kata Sandi",
+                    confirmation,
+                    {
+                        if (!loading) {
+                            confirmation = it
+                            error = null
+                        }
+                    },
+                    "Konfirmasi Kata Sandi",
                     modifier = Modifier.testTag("register-confirmation"),
+                    errorMessage = confirmationError,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { submit() }),
                 )
             }
-            error?.let {
-                Text(it, color = KuyError, style = MaterialTheme.typography.bodySmall,
+            val validationMessage = usernameError ?: emailError ?: passwordError ?: confirmationError ?: error
+            if (validationMessage != null) {
+                Text(
+                    validationMessage,
+                    color = KuyError,
+                    style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                        .semantics { liveRegion = LiveRegionMode.Polite })
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                )
             }
             Spacer(Modifier.height(58.dp))
             Button(

@@ -55,27 +55,43 @@ fun LoginScreen(
     var attempted by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var serverEmailError by remember { mutableStateOf<String?>(null) }
+    var serverPasswordError by remember { mutableStateOf<String?>(null) }
+    var noticeTitle by remember { mutableStateOf("Belum tersedia") }
     var notice by remember { mutableStateOf<String?>(null) }
     var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
+
+    var showForgotPasswordDialog by rememberSaveable { mutableStateOf(false) }
+    var resetEmail by rememberSaveable { mutableStateOf("") }
+    var resetLoading by remember { mutableStateOf(false) }
+    var resetEmailError by remember { mutableStateOf<String?>(null) }
+
     val focus = LocalFocusManager.current
 
     val emailError = when {
+        serverEmailError != null -> serverEmailError
         !attempted -> null
         email.isBlank() -> "Isi email terlebih dahulu."
         !Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches() ->
             "Masukkan format email yang valid untuk masuk."
         else -> null
     }
-    val passwordError = if (attempted && password.isEmpty()) "Isi kata sandi terlebih dahulu." else null
+    val passwordError = when {
+        serverPasswordError != null -> serverPasswordError
+        attempted && password.isEmpty() -> "Isi kata sandi terlebih dahulu."
+        else -> null
+    }
 
     val submit = {
         attempted = true
+        serverEmailError = null
+        serverPasswordError = null
+        error = null
         val trimmedEmail = email.trim()
         val isEmailValid = trimmedEmail.isNotEmpty() && Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()
         if (isEmailValid && password.isNotEmpty() && !loading) {
             focus.clearFocus()
             loading = true
-            error = null
 
             FirebaseAuth.getInstance()
                 .signInWithEmailAndPassword(trimmedEmail, password)
@@ -85,17 +101,71 @@ fun LoginScreen(
                         attempted = false
                         showSuccessPopup = true
                     } else {
-                        error = when (task.exception) {
-                            is FirebaseAuthInvalidUserException ->
-                                "Akun tidak terdaftar. Silakan daftar terlebih dahulu."
+                        when (val exception = task.exception) {
+                            is FirebaseAuthInvalidUserException -> {
+                                serverEmailError = when (exception.errorCode) {
+                                    "ERROR_USER_DISABLED" ->
+                                        "Akun dengan email ini telah dinonaktifkan."
+                                    else ->
+                                        "Email belum terdaftar. Silakan daftar terlebih dahulu."
+                                }
+                            }
+                            is FirebaseAuthInvalidCredentialsException -> {
+                                when (exception.errorCode) {
+                                    "ERROR_INVALID_EMAIL" ->
+                                        serverEmailError = "Masukkan format email yang valid untuk masuk."
+                                    "ERROR_WRONG_PASSWORD" ->
+                                        serverPasswordError = "Kata sandi salah. Periksa kembali kata sandi Anda."
+                                    else ->
+                                        error = "Email belum terdaftar atau kata sandi salah. Periksa kembali atau daftar akun baru."
+                                }
+                            }
+                            is FirebaseNetworkException ->
+                                error = "Koneksi internet bermasalah. Periksa jaringan Anda."
+                            is FirebaseTooManyRequestsException ->
+                                error = "Terlalu banyak percobaan masuk. Coba lagi nanti."
+                            else ->
+                                error = "Gagal masuk. Periksa email dan kata sandi Anda."
+                        }
+                    }
+                }
+        }
+    }
+
+    val submitResetPassword = {
+        val trimmedResetEmail = resetEmail.trim()
+        resetEmailError = when {
+            trimmedResetEmail.isEmpty() -> "Isi email terlebih dahulu."
+            !Patterns.EMAIL_ADDRESS.matcher(trimmedResetEmail).matches() ->
+                "Masukkan format email yang valid."
+            else -> null
+        }
+        if (resetEmailError == null && !resetLoading) {
+            focus.clearFocus()
+            resetLoading = true
+            FirebaseAuth.getInstance()
+                .sendPasswordResetEmail(trimmedResetEmail)
+                .addOnCompleteListener { task ->
+                    resetLoading = false
+                    if (task.isSuccessful) {
+                        email = trimmedResetEmail
+                        showForgotPasswordDialog = false
+                        noticeTitle = "Email Terkirim"
+                        notice = "Kode/tautan pemulihan kata sandi telah dikirim ke $trimmedResetEmail. Silakan periksa kotak masuk atau folder spam Anda."
+                    } else {
+                        resetEmailError = when (val exception = task.exception) {
+                            is FirebaseAuthInvalidUserException -> when (exception.errorCode) {
+                                "ERROR_USER_DISABLED" -> "Akun dengan email ini telah dinonaktifkan."
+                                else -> "Email belum terdaftar. Silakan daftar terlebih dahulu."
+                            }
                             is FirebaseAuthInvalidCredentialsException ->
-                                "Email atau kata sandi salah, atau akun belum terdaftar."
+                                "Masukkan format email yang valid."
                             is FirebaseNetworkException ->
                                 "Koneksi internet bermasalah. Periksa jaringan Anda."
                             is FirebaseTooManyRequestsException ->
-                                "Terlalu banyak percobaan masuk. Coba lagi nanti."
+                                "Terlalu banyak permintaan. Coba lagi nanti."
                             else ->
-                                "Gagal masuk. Periksa email dan kata sandi Anda."
+                                "Gagal mengirim email pemulihan. Periksa kembali email Anda."
                         }
                     }
                 }
@@ -153,6 +223,7 @@ fun LoginScreen(
                         {
                             if (!loading) {
                                 email = it
+                                serverEmailError = null
                                 error = null
                             }
                         },
@@ -171,6 +242,7 @@ fun LoginScreen(
                         {
                             if (!loading) {
                                 password = it
+                                serverPasswordError = null
                                 error = null
                             }
                         },
@@ -182,6 +254,23 @@ fun LoginScreen(
                         keyboardActions = KeyboardActions(onDone = { submit() }),
                     )
                 }
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Text(
+                        text = "Lupa Kata Sandi?",
+                        color = KuyOrange,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .testTag("forgot-password")
+                            .clickable(enabled = !loading) {
+                                resetEmail = email.trim()
+                                resetEmailError = null
+                                showForgotPasswordDialog = true
+                            },
+                    )
+                }
                 val validationMessage = emailError ?: passwordError ?: error
                 if (validationMessage != null) {
                     Text(
@@ -189,7 +278,7 @@ fun LoginScreen(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }
                     )
                 }
-                Spacer(Modifier.height((139 * gapScale).dp))
+                Spacer(Modifier.height((115 * gapScale).dp))
                 KuyPrimaryButton(
                     if (loading) "Memproses..." else "Masuk",
                     submit,
@@ -211,17 +300,106 @@ fun LoginScreen(
                 Text("Atau Masuk Dengan", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    SocialButton(R.drawable.login_google, "Google", 37, !loading) { notice = "Masuk dengan Google belum tersedia." }
-                    SocialButton(R.drawable.login_facebook, "Facebook", 36, !loading) { notice = "Masuk dengan Facebook belum tersedia." }
-                    SocialButton(R.drawable.login_instagram, "Instagram", 37, !loading) { notice = "Masuk dengan Instagram belum tersedia." }
+                    SocialButton(R.drawable.login_google, "Google", 37, !loading) {
+                        noticeTitle = "Belum tersedia"
+                        notice = "Masuk dengan Google belum tersedia."
+                    }
+                    SocialButton(R.drawable.login_facebook, "Facebook", 36, !loading) {
+                        noticeTitle = "Belum tersedia"
+                        notice = "Masuk dengan Facebook belum tersedia."
+                    }
+                    SocialButton(R.drawable.login_instagram, "Instagram", 37, !loading) {
+                        noticeTitle = "Belum tersedia"
+                        notice = "Masuk dengan Instagram belum tersedia."
+                    }
                 }
                 Spacer(Modifier.height((136 * gapScale).dp))
             }
         }
     }
+    if (showForgotPasswordDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!resetLoading) {
+                    showForgotPasswordDialog = false
+                    resetEmailError = null
+                }
+            },
+            containerColor = KuyNavy,
+            titleContentColor = Color.White,
+            textContentColor = KuyText,
+            title = {
+                Text(
+                    text = "Lupa Kata Sandi",
+                    color = KuyOrange,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Masukkan email akun Anda untuk menerima kode/tautan pemulihan kata sandi.",
+                        color = KuyText,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    KuyTextField(
+                        value = resetEmail,
+                        onValueChange = {
+                            if (!resetLoading) {
+                                resetEmail = it
+                                resetEmailError = null
+                            }
+                        },
+                        label = "Email",
+                        modifier = Modifier.testTag("reset-email"),
+                        errorMessage = resetEmailError,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            autoCorrectEnabled = false,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { submitResetPassword() }),
+                    )
+                    resetEmailError?.let { errMsg ->
+                        Text(
+                            text = errMsg,
+                            color = KuyError,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = submitResetPassword,
+                    enabled = !resetLoading,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = KuyButton,
+                        contentColor = KuyText,
+                    ),
+                    modifier = Modifier.testTag("reset-submit"),
+                ) {
+                    Text(if (resetLoading) "Mengirim..." else "Kirim")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showForgotPasswordDialog = false
+                        resetEmailError = null
+                    },
+                    enabled = !resetLoading,
+                    colors = ButtonDefaults.textButtonColors(contentColor = KuyText),
+                ) {
+                    Text("Batal")
+                }
+            },
+        )
+    }
     notice?.let { message ->
         AlertDialog(
-            onDismissRequest = { notice = null }, title = { Text("Belum tersedia") },
+            onDismissRequest = { notice = null }, title = { Text(noticeTitle) },
             text = { Text(message) },
             confirmButton = { TextButton(onClick = { notice = null }) { Text("Mengerti") } }
         )
