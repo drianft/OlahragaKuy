@@ -54,7 +54,6 @@ import com.example.olahragakuy.pages.posts.CommentOverlay
 import com.example.olahragakuy.pages.posts.PostUiModel
 import com.example.olahragakuy.pages.posts.currentUserOrNull
 import com.example.olahragakuy.pages.posts.resolveDisplayName
-import com.example.olahragakuy.pages.posts.seedInitialFirestoreCollectionsIfNeeded
 import com.example.olahragakuy.pages.posts.syncCurrentUserToFirestore
 import com.example.olahragakuy.pages.posts.toPostUiModel
 import com.example.olahragakuy.pages.posts.togglePostLike
@@ -64,6 +63,7 @@ import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.HomePostCard
 import com.example.olahragakuy.ui.components.KuyBottomNavBar
 import com.example.olahragakuy.ui.components.KuyHomeTopBar
+import com.example.olahragakuy.ui.components.KuyPullToRefreshBox
 import com.example.olahragakuy.ui.components.StreakBanner
 import com.example.olahragakuy.ui.theme.HomeBlue
 import com.example.olahragakuy.ui.theme.HomeNavy
@@ -74,6 +74,7 @@ import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +90,7 @@ fun HomeScreen(
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
     var posts by remember { mutableStateOf<List<PostUiModel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var isRefreshing by remember { mutableStateOf(false) }
     var feedError by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
     var refreshRequest by remember { mutableIntStateOf(0) }
@@ -96,44 +98,11 @@ fun HomeScreen(
     var refreshing by remember { mutableStateOf(false) }
     val revisions = remember { FeedRevision() }
     val isPreview = LocalInspectionMode.current
-    val feedQuery = remember(isPreview) {
-        if (isPreview) null else FirebaseFirestore.getInstance()
-            .collection("posts")
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .limit(20)
-    }
-    val refresh: () -> Unit = {
-        if (!refreshing && !isPreview) {
-            refreshing = true
-            refreshRequest++
-            imageRetry++
-        }
-    }
 
-    LaunchedEffect(refreshRequest) {
-        if (refreshRequest == 0 || feedQuery == null) return@LaunchedEffect
-        val token = revisions.capture()
-        try {
-            val snapshot = withTimeoutOrNull(30_000) {
-                suspendCancellableCoroutine { continuation ->
-                    feedQuery.get(Source.SERVER)
-                        .addOnSuccessListener { if (continuation.isActive) continuation.resume(it) }
-                        .addOnFailureListener { if (continuation.isActive) continuation.resumeWithException(it) }
-                }
-            }
-            if (snapshot == null) {
-                feedError = "Koneksi terlalu lama. Tarik ke bawah untuk mencoba lagi."
-            } else if (revisions.accepts(token)) {
-                posts = snapshot.documents.map { it.toPostUiModel() }
-                feedError = null
-                loading = false
-            }
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            feedError = error.localizedMessage ?: "Gagal memperbarui postingan."
-        } finally {
-            refreshing = false
+    androidx.compose.runtime.LaunchedEffect(isRefreshing) {
+        if (isRefreshing) {
+            delay(500)
+            isRefreshing = false
         }
     }
 
@@ -141,17 +110,21 @@ fun HomeScreen(
         var listener: ListenerRegistration? = null
         if (isPreview) {
             loading = false
+            isRefreshing = false
         } else {
-            syncCurrentUserToFirestore()
-            seedInitialFirestoreCollectionsIfNeeded()
-            loading = posts.isEmpty()
             syncCurrentUserToFirestore(onError = { notice = it })
-            loading = true
+            if (posts.isEmpty()) {
+                loading = true
+            }
             feedError = null
             try {
-                listener = feedQuery?.addSnapshotListener { snapshot, error ->
+                listener = FirebaseFirestore.getInstance()
+                    .collection("posts")
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(20)
+                    .addSnapshotListener { snapshot, error ->
                         loading = false
-                        revisions.changed()
+                        isRefreshing = false
                         if (error != null) {
                             feedError = error.localizedMessage ?: "Gagal mengambil postingan."
                         } else {
@@ -161,6 +134,7 @@ fun HomeScreen(
                     }
             } catch (error: Exception) {
                 loading = false
+                isRefreshing = false
                 feedError = error.localizedMessage ?: "Gagal menghubungkan Firebase."
             }
         }
@@ -187,62 +161,48 @@ fun HomeScreen(
             )
         },
     ) { insets ->
-        BoxWithConstraints(Modifier.fillMaxSize().padding(insets)) {
-            val widthPx = with(LocalDensity.current) {
-                (maxWidth - 40.dp).roundToPx().coerceAtLeast(1)
-            }
-            val images = rememberPreparedFeedImages(posts, widthPx, imageRetry)
-            val visiblePosts = posts.filter { it.imageUrl == null || it.id in images.painters }
-            PullToRefreshBox(
-                isRefreshing = refreshing,
-                onRefresh = refresh,
+        KuyPullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                isRefreshing = true
+                retry++
+            },
+            modifier = Modifier.fillMaxSize().padding(insets),
+        ) {
+            LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    item {
-                        StreakBanner(onClick = { notice = "Fitur streak belum tersedia." })
-                    }
-                    item {
-                        CreatePostPromptBar(
-                            userDisplayName = userDisplayName,
-                            onClick = onCreatePost,
-                        )
-                    }
-                    if (loading && posts.isEmpty()) item {
+                item {
+                    StreakBanner(onClick = { notice = "Fitur streak belum tersedia." })
+                }
+                item {
+                    CreatePostPromptBar(
+                        userDisplayName = userDisplayName,
+                        onClick = onCreatePost,
+                    )
+                }
+                when {
+                    loading -> item {
                         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = HomeOrange)
                         }
                     }
-                    if (feedError != null) item {
+                    feedError != null -> item {
                         Column(Modifier.fillMaxWidth().padding(20.dp)) {
                             Text("Gagal memuat postingan: $feedError", color = HomeText)
-                            TextButton(onClick = { retry++; refresh() }) {
+                            TextButton(onClick = { retry++ }) {
                                 Text("Coba lagi", color = HomeOrange)
                             }
                         }
                     }
-                    if (images.preparing) item {
-                        Text("Menyiapkan foto postingan…", Modifier.padding(20.dp), color = HomeText)
-                    }
-                    if (images.failed) item {
-                        Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                            Text("Beberapa foto belum berhasil dimuat", color = HomeText)
-                            TextButton(onClick = { imageRetry++ }) {
-                                Text("Coba lagi", color = HomeOrange)
-                            }
-                        }
-                    }
-                    if (!loading && feedError == null && posts.isEmpty()) item {
+                    posts.isEmpty() -> item {
                         Text("Belum ada postingan.", Modifier.padding(20.dp), color = HomeText)
                     }
-                    items(visiblePosts, key = { "post:${it.id}" }) { rawPost ->
+                    else -> items(posts, key = { "post:${it.id}" }) { rawPost ->
                         val post = rawPost.withLocalState()
                         HomePostCard(
                             post = post,
-                            preparedImage = images.painters[post.id],
                             isLiked = currentUser?.uid != null && currentUser.uid in post.likedByIds,
                             onLikeClick = {
                                 togglePostLike(
@@ -253,6 +213,7 @@ fun HomeScreen(
                             },
                             onAction = { notice = it },
                             onCommentClick = { activeCommentPostId = post.id },
+                            onAuthorClick = { onUserProfileClick(post.authorId, post.authorName) },
                         )
                     }
                 }
