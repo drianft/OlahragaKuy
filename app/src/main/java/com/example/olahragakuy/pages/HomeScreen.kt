@@ -53,6 +53,7 @@ import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.HomePostCard
 import com.example.olahragakuy.ui.components.KuyBottomNavBar
 import com.example.olahragakuy.ui.components.KuyHomeTopBar
+import com.example.olahragakuy.ui.components.KuyPullToRefreshBox
 import com.example.olahragakuy.ui.components.StreakBanner
 import com.example.olahragakuy.ui.theme.HomeBlue
 import com.example.olahragakuy.ui.theme.HomeNavy
@@ -63,6 +64,7 @@ import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import kotlinx.coroutines.delay
 
 @Composable
 fun HomeScreen(
@@ -77,17 +79,28 @@ fun HomeScreen(
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
     var posts by remember { mutableStateOf<List<PostUiModel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var isRefreshing by remember { mutableStateOf(false) }
     var feedError by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
     val isPreview = LocalInspectionMode.current
+
+    androidx.compose.runtime.LaunchedEffect(isRefreshing) {
+        if (isRefreshing) {
+            delay(500)
+            isRefreshing = false
+        }
+    }
 
     DisposableEffect(isPreview, retry) {
         var listener: ListenerRegistration? = null
         if (isPreview) {
             loading = false
+            isRefreshing = false
         } else {
             syncCurrentUserToFirestore(onError = { notice = it })
-            loading = true
+            if (posts.isEmpty()) {
+                loading = true
+            }
             feedError = null
             try {
                 listener = FirebaseFirestore.getInstance()
@@ -96,6 +109,7 @@ fun HomeScreen(
                     .limit(20)
                     .addSnapshotListener { snapshot, error ->
                         loading = false
+                        isRefreshing = false
                         if (error != null) {
                             feedError = error.localizedMessage ?: "Gagal mengambil postingan."
                         } else {
@@ -105,6 +119,7 @@ fun HomeScreen(
                     }
             } catch (error: Exception) {
                 loading = false
+                isRefreshing = false
                 feedError = error.localizedMessage ?: "Gagal menghubungkan Firebase."
             }
         }
@@ -131,52 +146,61 @@ fun HomeScreen(
             )
         },
     ) { insets ->
-        LazyColumn(
+        KuyPullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                isRefreshing = true
+                retry++
+            },
             modifier = Modifier.fillMaxSize().padding(insets),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
-                StreakBanner(onClick = { notice = "Fitur streak belum tersedia." })
-            }
-            item {
-                CreatePostPromptBar(
-                    userDisplayName = userDisplayName,
-                    onClick = onCreatePost,
-                )
-            }
-            when {
-                loading -> item {
-                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = HomeOrange)
-                    }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    StreakBanner(onClick = { notice = "Fitur streak belum tersedia." })
                 }
-                feedError != null -> item {
-                    Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                        Text("Gagal memuat postingan: $feedError", color = HomeText)
-                        TextButton(onClick = { retry++ }) {
-                            Text("Coba lagi", color = HomeOrange)
+                item {
+                    CreatePostPromptBar(
+                        userDisplayName = userDisplayName,
+                        onClick = onCreatePost,
+                    )
+                }
+                when {
+                    loading -> item {
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = HomeOrange)
                         }
                     }
-                }
-                posts.isEmpty() -> item {
-                    Text("Belum ada postingan.", Modifier.padding(20.dp), color = HomeText)
-                }
-                else -> items(posts, key = { "post:${it.id}" }) { rawPost ->
-                    val post = rawPost.withLocalState()
-                    HomePostCard(
-                        post = post,
-                        isLiked = currentUser?.uid != null && currentUser.uid in post.likedByIds,
-                        onLikeClick = {
-                            togglePostLike(
-                                post = post,
-                                onAuthRequired = { notice = "Silakan masuk untuk menyukai postingan." },
-                                onError = { notice = it },
-                            )
-                        },
-                        onAction = { notice = it },
-                        onCommentClick = { activeCommentPostId = post.id },
-                        onAuthorClick = { onUserProfileClick(post.authorId, post.authorName) },
-                    )
+                    feedError != null -> item {
+                        Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                            Text("Gagal memuat postingan: $feedError", color = HomeText)
+                            TextButton(onClick = { retry++ }) {
+                                Text("Coba lagi", color = HomeOrange)
+                            }
+                        }
+                    }
+                    posts.isEmpty() -> item {
+                        Text("Belum ada postingan.", Modifier.padding(20.dp), color = HomeText)
+                    }
+                    else -> items(posts, key = { "post:${it.id}" }) { rawPost ->
+                        val post = rawPost.withLocalState()
+                        HomePostCard(
+                            post = post,
+                            isLiked = currentUser?.uid != null && currentUser.uid in post.likedByIds,
+                            onLikeClick = {
+                                togglePostLike(
+                                    post = post,
+                                    onAuthRequired = { notice = "Silakan masuk untuk menyukai postingan." },
+                                    onError = { notice = it },
+                                )
+                            },
+                            onAction = { notice = it },
+                            onCommentClick = { activeCommentPostId = post.id },
+                            onAuthorClick = { onUserProfileClick(post.authorId, post.authorName) },
+                        )
+                    }
                 }
             }
         }
