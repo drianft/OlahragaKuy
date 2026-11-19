@@ -103,9 +103,23 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
+      function validFollowerCountUpdate() {
+        let next = request.resource.data;
+        let prevCount = resource.data.get('followersCount', 0);
+        return isAuthenticated()
+          && next.diff(resource.data).affectedKeys().hasOnly(['followersCount', 'updatedAt'])
+          && next.followersCount is int
+          && next.followersCount >= 0
+          && next.followersCount <= prevCount + 1
+          && next.followersCount >= prevCount - 1;
+      }
+
       allow read: if isAuthenticated();
-      allow create, update: if isOwner(userId)
+      allow create: if isOwner(userId)
         && hasOnlyAllowedFields(['displayName', 'username', 'name', 'bio', 'photoUrl', 'avatarUrl', 'followersCount', 'followingCount', 'postsCount', 'updatedAt']);
+      allow update: if (isOwner(userId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'username', 'name', 'bio', 'photoUrl', 'avatarUrl', 'followersCount', 'followingCount', 'postsCount', 'updatedAt']))
+        || validFollowerCountUpdate();
       allow delete: if false;
 
       match /following/{friendId} {
@@ -113,6 +127,13 @@ service cloud.firestore {
         allow create, update: if isOwner(userId)
           && hasOnlyAllowedFields(['uid', 'displayName', 'name', 'username', 'photoUrl', 'avatarUrl', 'createdAt']);
         allow delete: if isOwner(userId);
+      }
+
+      match /followers/{followerId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isOwner(followerId)
+          && hasOnlyAllowedFields(['uid', 'displayName', 'name', 'username', 'photoUrl', 'avatarUrl', 'createdAt']);
+        allow delete: if isOwner(followerId);
       }
 
       match /notifications/{notificationId} {
@@ -149,10 +170,20 @@ service cloud.firestore {
           && next.likedByNames.size() <= 500;
       }
 
+      function validPostCaptionUpdate() {
+        let next = request.resource.data;
+        return isAuthenticated()
+          && resource.data.authorId == request.auth.uid
+          && next.diff(resource.data).affectedKeys().hasOnly(['caption', 'searchKeywords', 'updatedAt'])
+          && next.caption is string
+          && next.caption.size() > 0
+          && next.caption.size() <= 2000;
+      }
+
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidPostCreate(request.resource.data);
-      allow update: if validCommentIncrement() || validPostLikeUpdate();
-      allow delete: if false;
+      allow update: if validCommentIncrement() || validPostLikeUpdate() || validPostCaptionUpdate();
+      allow delete: if isAuthenticated() && resource.data.authorId == request.auth.uid;
 
       match /comments/{commentId} {
         function validReply() {
