@@ -521,6 +521,281 @@ fun syncCurrentUserToFirestore(onError: (String) -> Unit = {}) {
     }
 }
 
+private var hasSeededCurrentSession = false
+
+/**
+ * Mengisi otomatis koleksi awal di Firestore (`users`, `users/{uid}/following`,
+ * `users/{uid}/notifications`, `posts`, dan `chats` beserta `messages`) untuk akun
+ * yang sedang login apabila masih kosong, sehingga pengguna tidak perlu input manual di Firebase Console.
+ */
+fun seedInitialFirestoreCollectionsIfNeeded(onComplete: () -> Unit = {}) {
+    val user = currentUserOrNull() ?: return
+    if (hasSeededCurrentSession) return
+    hasSeededCurrentSession = true
+
+    val uid = user.uid
+    val myName = user.resolveDisplayName("Anda")
+    val db = FirebaseFirestore.getInstance()
+
+    val seedFriends = listOf(
+        FollowingFriend(uid = "user_monster_basket", displayName = "Monster Basket"),
+        FollowingFriend(uid = "user_kenangan_terindah", displayName = "KenanganTerindah"),
+        FollowingFriend(uid = "user_sayur_olahraga", displayName = "SayurOlahraga"),
+        FollowingFriend(uid = "user_bibi_olahraga", displayName = "BibiOlahraga"),
+        FollowingFriend(uid = "user_gurita_bola", displayName = "Gurita bola"),
+        FollowingFriend(uid = "user_kucing_padel", displayName = "Kucing padel"),
+    )
+
+    try {
+        // 1. Pastikan dokumen users/{uid} milik pengguna aktif memiliki counter & profil lengkap
+        val myUserRef = db.collection("users").document(uid)
+        myUserRef.get().addOnSuccessListener { doc ->
+            val updates = hashMapOf<String, Any>(
+                "displayName" to myName,
+                "username" to myName,
+                "name" to myName,
+                "updatedAt" to FieldValue.serverTimestamp(),
+            )
+            if (doc == null || !doc.exists() || doc.get("followingCount") == null) {
+                updates["followersCount"] = 12L
+                updates["followingCount"] = seedFriends.size.toLong()
+                updates["postsCount"] = 2L
+            }
+            myUserRef.set(updates, SetOptions.merge())
+        }
+
+        // 2. Isi sub-koleksi users/{uid}/following bila masih kosong & daftarkan profil teman di koleksi users
+        val followingCol = myUserRef.collection("following")
+        followingCol.limit(1).get().addOnSuccessListener { snap ->
+            if (snap != null && snap.isEmpty) {
+                seedFriends.forEach { friend ->
+                    followingCol.document(friend.uid).set(
+                        mapOf(
+                            "uid" to friend.uid,
+                            "displayName" to friend.displayName,
+                            "name" to friend.displayName,
+                            "username" to friend.displayName,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                        ),
+                        SetOptions.merge(),
+                    )
+                    db.collection("users").document(friend.uid).set(
+                        mapOf(
+                            "displayName" to friend.displayName,
+                            "username" to friend.displayName,
+                            "name" to friend.displayName,
+                            "followersCount" to 24L,
+                            "followingCount" to 18L,
+                            "postsCount" to 3L,
+                            "updatedAt" to FieldValue.serverTimestamp(),
+                        ),
+                        SetOptions.merge(),
+                    )
+                }
+            }
+        }
+
+        // 3. Isi postingan awal di koleksi posts bila koleksi posts masih kosong
+        val postsCol = db.collection("posts")
+        postsCol.limit(1).get().addOnSuccessListener { postSnap ->
+            if (postSnap != null && postSnap.isEmpty) {
+                val post1Id = "seed_post_sayur"
+                val post2Id = "seed_post_jogging"
+                val post3Id = "seed_post_gym"
+
+                val post1 = hashMapOf<String, Any>(
+                    "authorId" to uid,
+                    "authorName" to "SayurOlahraga",
+                    "caption" to "Ayo mulai konsumsi sayur supaya harimu makin sehat",
+                    "category" to "Makanan Sehat",
+                    "searchKeywords" to buildSearchKeywords(
+                        caption = "Ayo mulai konsumsi sayur supaya harimu makin sehat",
+                        category = "Makanan Sehat",
+                        authorName = "SayurOlahraga",
+                    ),
+                    "likes" to 57L,
+                    "likedByIds" to listOf("user_monster_basket"),
+                    "likedByNames" to listOf("Monster Basket"),
+                    "comment" to 1L,
+                    "Share" to 8L,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                )
+                val post2 = hashMapOf<String, Any>(
+                    "authorId" to uid,
+                    "authorName" to "KenanganTerindah",
+                    "caption" to "Jogging santuy lagi guys with my bestie",
+                    "category" to "Olahraga Pagi, Kardio",
+                    "searchKeywords" to buildSearchKeywords(
+                        caption = "Jogging santuy lagi guys with my bestie",
+                        category = "Olahraga Pagi, Kardio",
+                        authorName = "KenanganTerindah",
+                        taggedFriends = listOf(FollowingFriend(uid, myName)),
+                    ),
+                    "taggedFriendIds" to listOf(uid),
+                    "taggedFriends" to listOf(mapOf("uid" to uid, "displayName" to myName)),
+                    "likes" to 57L,
+                    "likedByIds" to listOf("user_monster_basket"),
+                    "likedByNames" to listOf("Monster Basket"),
+                    "comment" to 0L,
+                    "Share" to 8L,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                )
+                val post3 = hashMapOf<String, Any>(
+                    "authorId" to uid,
+                    "authorName" to "BibiOlahraga",
+                    "caption" to "Always on Proces",
+                    "category" to "Bulking, Foto Orang",
+                    "searchKeywords" to buildSearchKeywords(
+                        caption = "Always on Proces",
+                        category = "Bulking, Foto Orang",
+                        authorName = "BibiOlahraga",
+                    ),
+                    "likes" to 57L,
+                    "likedByIds" to listOf("user_kenangan_terindah", "user_monster_basket"),
+                    "likedByNames" to listOf("NamaPengguna", "Monster Basket"),
+                    "comment" to 0L,
+                    "Share" to 8L,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                )
+
+                postsCol.document(post1Id).set(post1, SetOptions.merge())
+                postsCol.document(post2Id).set(post2, SetOptions.merge())
+                postsCol.document(post3Id).set(post3, SetOptions.merge())
+            }
+        }
+
+        // 4. Isi sub-koleksi users/{uid}/notifications bila masih kosong
+        val notifCol = myUserRef.collection("notifications")
+        notifCol.limit(1).get().addOnSuccessListener { notifSnap ->
+            if (notifSnap != null && notifSnap.isEmpty) {
+                notifCol.document("seed_notif_like_monster").set(
+                    mapOf(
+                        "actorId" to uid,
+                        "actorName" to "Monster Basket",
+                        "postId" to "seed_post_gym",
+                        "type" to NotificationType.LIKE.code,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                    ),
+                    SetOptions.merge(),
+                )
+                notifCol.document("seed_notif_tag_kenangan").set(
+                    mapOf(
+                        "actorId" to uid,
+                        "actorName" to "KenanganTerindah",
+                        "postId" to "seed_post_jogging",
+                        "type" to NotificationType.TAG.code,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                    ),
+                    SetOptions.merge(),
+                )
+                notifCol.document("seed_notif_comment_sayur").set(
+                    mapOf(
+                        "actorId" to uid,
+                        "actorName" to "SayurOlahraga",
+                        "postId" to "seed_post_sayur",
+                        "type" to NotificationType.COMMENT.code,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                    ),
+                    SetOptions.merge(),
+                )
+            }
+        }
+
+        // 5. Isi koleksi chats & sub-koleksi messages bila masih kosong
+        val chatsCol = db.collection("chats")
+        chatsCol.limit(1).get().addOnSuccessListener { chatSnap ->
+            if (chatSnap != null && chatSnap.isEmpty) {
+                val dmMonsterId = directChatRoomId(uid, "user_monster_basket")
+                val dmKenanganId = directChatRoomId(uid, "user_kenangan_terindah")
+                val groupGymId = "group_gymclub"
+
+                val monsterChatRef = chatsCol.document(dmMonsterId)
+                monsterChatRef.set(
+                    mapOf(
+                        "name" to "Monster Basket",
+                        "isGroup" to false,
+                        "statusOrMembers" to "aktif 2 jam lalu",
+                        "lastMessage" to "Ayo bro",
+                        "dateLabel" to "4/11",
+                        "participantIds" to listOf(uid, "user_monster_basket"),
+                        "participantNames" to listOf(myName, "Monster Basket"),
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                    ),
+                    SetOptions.merge(),
+                )
+                monsterChatRef.collection("messages").document("m1").set(
+                    mapOf(
+                        "senderId" to "user_monster_basket",
+                        "senderName" to "Monster Basket",
+                        "text" to "Bro nanti olahraga bareng dong, kepengen banget main basket gue",
+                        "timeText" to "11:20",
+                        "createdAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+                monsterChatRef.collection("messages").document("m2").set(
+                    mapOf(
+                        "senderId" to uid,
+                        "senderName" to myName,
+                        "text" to "Kapan kapan gas bro",
+                        "timeText" to "11:21",
+                        "createdAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+
+                val kenanganChatRef = chatsCol.document(dmKenanganId)
+                kenanganChatRef.set(
+                    mapOf(
+                        "name" to "KenanganTerindah",
+                        "isGroup" to false,
+                        "statusOrMembers" to "aktif 1 jam lalu",
+                        "lastMessage" to "Ayok olahraga bareng temannn",
+                        "dateLabel" to "4/11",
+                        "participantIds" to listOf(uid, "user_kenangan_terindah"),
+                        "participantNames" to listOf(myName, "KenanganTerindah"),
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                    ),
+                    SetOptions.merge(),
+                )
+                kenanganChatRef.collection("messages").document("k1").set(
+                    mapOf(
+                        "senderId" to "user_kenangan_terindah",
+                        "senderName" to "KenanganTerindah",
+                        "text" to "Ayok olahraga bareng temannn",
+                        "timeText" to "11:22",
+                        "createdAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+
+                val gymGroupRef = chatsCol.document(groupGymId)
+                gymGroupRef.set(
+                    mapOf(
+                        "name" to "GymClub",
+                        "isGroup" to true,
+                        "statusOrMembers" to "Anda,Monster Basket,KenanganTerindah",
+                        "lastMessage" to "Monster Basket: Siapa mau gym soree",
+                        "dateLabel" to "4/11",
+                        "participantIds" to listOf(uid, "user_monster_basket", "user_kenangan_terindah"),
+                        "participantNames" to listOf(myName, "Monster Basket", "KenanganTerindah"),
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                    ),
+                    SetOptions.merge(),
+                )
+                gymGroupRef.collection("messages").document("g1").set(
+                    mapOf(
+                        "senderId" to "user_monster_basket",
+                        "senderName" to "Monster Basket",
+                        "text" to "Siapa mau gym soree",
+                        "timeText" to "11:20",
+                        "createdAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+            }
+            onComplete()
+        }
+    } catch (_: Exception) {
+    }
+}
+
 /**
  * Memuat daftar teman/akun dari Firebase:
  * 1. Sub-koleksi `users/{uid}/following`

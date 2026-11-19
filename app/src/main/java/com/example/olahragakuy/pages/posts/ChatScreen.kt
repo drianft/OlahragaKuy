@@ -469,6 +469,15 @@ fun ChatScreen(
     if (!isPreview) {
         LaunchedEffect(currentUser?.uid) {
             syncCurrentUserToFirestore()
+            seedInitialFirestoreCollectionsIfNeeded {
+                loadFirebaseFriends(
+                    uid = currentUser?.uid,
+                    currentUserName = currentUserName,
+                    onResult = { loaded ->
+                        followingFriends = loaded
+                    },
+                )
+            }
             loadFirebaseFriends(
                 uid = currentUser?.uid,
                 currentUserName = currentUserName,
