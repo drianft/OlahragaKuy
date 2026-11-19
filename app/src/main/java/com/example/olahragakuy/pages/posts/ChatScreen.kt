@@ -306,6 +306,32 @@ fun directChatRoomId(uidA: String, uidB: String): String {
     return "dm_${first}_$second"
 }
 
+/** Menyiapkan ruang DM antara pengguna aktif dan target agar langsung terbuka dan masuk ke log chat. */
+fun ensureDirectChatRoom(
+    currentUserId: String,
+    currentUserName: String,
+    targetUid: String,
+    targetName: String,
+): ChatRoomUiModel {
+    val cleanTargetName = targetName.trim().ifEmpty { "Teman" }
+    val dmId = directChatRoomId(currentUserId, targetUid)
+    val existing = LocalChatRooms.firstOrNull { !it.isGroup && it.id == dmId }
+    if (existing != null) return existing
+    val created = ChatRoomUiModel(
+        id = dmId,
+        name = cleanTargetName,
+        isGroup = false,
+        statusOrMembers = "Aktif",
+        lastMessage = "Ketuk untuk mulai chat dengan $cleanTargetName",
+        dateLabel = "",
+        avatarColorHex = 0xFF5B7CFAL,
+        participantIds = listOf(currentUserId, targetUid).filter { it.isNotBlank() }.distinct(),
+        participantNames = listOf(currentUserName, cleanTargetName).filter { it.isNotBlank() }.distinct(),
+    )
+    LocalChatRooms.add(0, created)
+    return created
+}
+
 /** Menentukan judul ruang obrolan dari sudut pandang akun yang sedang login. */
 fun resolveChatRoomDisplayName(
     fallbackName: String,
@@ -413,11 +439,13 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     initialTab: ChatTab = ChatTab.ORANG,
     initialSelectedRoomId: String? = null,
+    initialDirectRoom: ChatRoomUiModel? = null,
+    exitOnDetailBack: Boolean = false,
 ) {
     val isPreview = LocalInspectionMode.current
     var selectedTab by rememberSaveable { mutableStateOf(initialTab) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var selectedRoomId by rememberSaveable { mutableStateOf(initialSelectedRoomId) }
+    var selectedRoomId by rememberSaveable { mutableStateOf(initialSelectedRoomId ?: initialDirectRoom?.id) }
     var showCreateGroupDialog by rememberSaveable { mutableStateOf(false) }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -515,11 +543,11 @@ fun ChatScreen(
         }
     }
 
-    val allRooms = remember(isPreview, LocalChatRooms.toList(), remoteRooms, followingFriends, currentUserId, currentUserName) {
+    val allRooms = remember(isPreview, LocalChatRooms.toList(), remoteRooms, followingFriends, currentUserId, currentUserName, initialDirectRoom) {
         if (isPreview) {
             DefaultChatRooms
         } else {
-            val combined = (remoteRooms + LocalChatRooms.toList()).distinctBy { it.id }
+            val combined = (remoteRooms + LocalChatRooms.toList() + listOfNotNull(initialDirectRoom)).distinctBy { it.id }
             mergeChatRoomsWithFollowing(
                 existingRooms = combined,
                 followingFriends = followingFriends,
@@ -529,11 +557,16 @@ fun ChatScreen(
         }
     }
 
-    val activeRoom = remember(allRooms, selectedRoomId) {
+    val activeRoom = remember(allRooms, selectedRoomId, initialDirectRoom) {
         allRooms.firstOrNull { it.id == selectedRoomId }
+            ?: initialDirectRoom?.takeIf { it.id == selectedRoomId }
     }
 
-    BackHandler(enabled = selectedRoomId != null) {
+    val handleDetailBack: () -> Unit = {
+        if (exitOnDetailBack) onBack() else selectedRoomId = null
+    }
+
+    BackHandler(enabled = selectedRoomId != null && !exitOnDetailBack) {
         selectedRoomId = null
     }
 
@@ -542,7 +575,7 @@ fun ChatScreen(
             room = activeRoom,
             currentUserId = currentUserId,
             currentUserName = currentUserName,
-            onBack = { selectedRoomId = null },
+            onBack = handleDetailBack,
             onCallClick = { notice = "Fitur panggilan suara segera hadir." },
             onVenueDetailClick = { venueTitle ->
                 notice = "Membuka detail lokasi $venueTitle."
@@ -925,20 +958,17 @@ private fun ChatDetailContent(
             )
             LocalChatMessages[room.id] = messages + newMsg
 
-            // Perbarui preview pesan terakhir pada daftar ruang obrolan
+            // Perbarui preview pesan terakhir pada daftar ruang obrolan dan naikkan ke urutan teratas
             val roomIdx = LocalChatRooms.indexOfFirst { it.id == room.id }
             val updatedPreview = if (room.isGroup) "$currentUserName: $trimmed" else trimmed
+            val updatedRoom = (if (roomIdx >= 0) LocalChatRooms[roomIdx] else room).copy(
+                lastMessage = updatedPreview,
+                dateLabel = dateNow,
+            )
             if (roomIdx >= 0) {
-                LocalChatRooms[roomIdx] = LocalChatRooms[roomIdx].copy(
-                    lastMessage = updatedPreview,
-                    dateLabel = dateNow,
-                )
-            } else {
-                LocalChatRooms.add(
-                    0,
-                    room.copy(lastMessage = updatedPreview, dateLabel = dateNow),
-                )
+                LocalChatRooms.removeAt(roomIdx)
             }
+            LocalChatRooms.add(0, updatedRoom)
             messageInput = ""
 
             if (!isPreview) {
@@ -961,7 +991,9 @@ private fun ChatDetailContent(
                             "updatedAt" to FieldValue.serverTimestamp(),
                         ),
                         SetOptions.merge(),
-                    )
+                    ).addOnFailureListener { err ->
+                        android.util.Log.e("ChatScreen", "Gagal menyimpan chat ke Firestore: ${err.message}", err)
+                    }
                     chatRef.collection("messages").document(msgId).set(
                         mapOf(
                             "senderId" to currentUserId,
@@ -970,8 +1002,11 @@ private fun ChatDetailContent(
                             "timeText" to timeNow,
                             "createdAt" to FieldValue.serverTimestamp(),
                         ),
-                    )
-                } catch (_: Exception) {
+                    ).addOnFailureListener { err ->
+                        android.util.Log.e("ChatScreen", "Gagal mengirim pesan ke Firestore: ${err.message}", err)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatScreen", "Exception saat kirim pesan: ${e.message}", e)
                 }
             }
         }

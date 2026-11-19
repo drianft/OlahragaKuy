@@ -44,8 +44,7 @@ import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.olahragakuy.pages.profile.user.ensureUserProfile
 
 /** Figma Login 5:2002. Android supplies its own status and navigation bars. */
 @Composable
@@ -114,34 +113,24 @@ fun LoginScreen(
                 .addOnCompleteListener { task ->
                     val user = if (task.isSuccessful) task.result?.user else null
                     if (user != null) {
-                        val userDocRef = FirebaseFirestore.getInstance()
-                            .collection("users")
-                            .document(user.uid)
-                        userDocRef.get()
-                            .addOnSuccessListener { doc ->
-                                val role = doc.getString("role") ?: "member"
+                        ensureUserProfile(user)
+                            .addOnSuccessListener { role ->
+                                if (FirebaseAuth.getInstance().currentUser?.uid != user.uid) {
+                                    loading = false
+                                    return@addOnSuccessListener
+                                }
                                 if (role != "admin" && !user.isEmailVerified) {
-                                    user.sendEmailVerification().addOnCompleteListener {
+                                    user.sendEmailVerification().addOnCompleteListener { verification ->
                                         FirebaseAuth.getInstance().signOut()
                                         loading = false
                                         noticeTitle = "Verifikasi Email Diperlukan"
-                                        notice = "Email Anda belum diverifikasi. Tautan verifikasi baru telah dikirim ke kotak masuk atau folder spam email Anda. Silakan klik tautan tersebut terlebih dahulu sebelum masuk."
+                                        notice = if (verification.isSuccessful) {
+                                            "Tautan verifikasi telah dikirim. Periksa kotak masuk atau folder spam, lalu masuk kembali setelah verifikasi."
+                                        } else {
+                                            "Email belum diverifikasi dan tautan belum berhasil dikirim. Periksa koneksi lalu coba masuk kembali."
+                                        }
                                     }
                                 } else {
-                                    if (!doc.exists()) {
-                                        val defaultUsername = user.displayName
-                                            ?.takeIf { it.isNotBlank() }
-                                            ?: (user.email ?: trimmedEmail).substringBefore("@")
-                                        userDocRef.set(
-                                            mapOf(
-                                                "uid" to user.uid,
-                                                "username" to defaultUsername,
-                                                "email" to (user.email ?: trimmedEmail),
-                                                "role" to role,
-                                                "createdAt" to FieldValue.serverTimestamp(),
-                                            ),
-                                        )
-                                    }
                                     loading = false
                                     attempted = false
                                     loggedInRole = role
@@ -149,19 +138,11 @@ fun LoginScreen(
                                 }
                             }
                             .addOnFailureListener {
-                                if (!user.isEmailVerified) {
-                                    user.sendEmailVerification().addOnCompleteListener {
-                                        FirebaseAuth.getInstance().signOut()
-                                        loading = false
-                                        noticeTitle = "Verifikasi Email Diperlukan"
-                                        notice = "Email Anda belum diverifikasi. Tautan verifikasi baru telah dikirim ke kotak masuk atau folder spam email Anda. Silakan klik tautan tersebut terlebih dahulu sebelum masuk."
-                                    }
-                                } else {
-                                    loading = false
-                                    attempted = false
-                                    loggedInRole = "member"
-                                    showSuccessPopup = true
+                                if (FirebaseAuth.getInstance().currentUser?.uid == user.uid) {
+                                    FirebaseAuth.getInstance().signOut()
                                 }
+                                loading = false
+                                error = "Akun berhasil diautentikasi, tetapi profil Firestore belum dapat disiapkan. Periksa koneksi dan izin database, lalu coba masuk lagi."
                             }
                     } else {
                         loading = false

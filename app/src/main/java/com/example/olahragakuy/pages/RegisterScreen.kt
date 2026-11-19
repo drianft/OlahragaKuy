@@ -44,8 +44,7 @@ import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.UserProfileChangeRequest
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.olahragakuy.pages.profile.user.ensureUserProfile
 
 @Composable
 fun RegisterScreen(
@@ -68,7 +67,6 @@ fun RegisterScreen(
     var serverEmailError by remember { mutableStateOf<String?>(null) }
     var serverPasswordError by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
-    var profileWarning by remember { mutableStateOf(false) }
     var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
     val focus = LocalFocusManager.current
 
@@ -137,26 +135,34 @@ fun RegisterScreen(
                         registeredEmail = trimmedEmail
                         val user = result.result.user
                         if (user != null) {
-                            val userData = mapOf(
-                                "uid" to user.uid,
-                                "username" to trimmedUsername,
-                                "email" to trimmedEmail,
-                                "role" to "member",
-                                "createdAt" to FieldValue.serverTimestamp(),
-                            )
                             user.updateProfile(
                                 UserProfileChangeRequest.Builder().setDisplayName(trimmedUsername).build(),
                             ).addOnCompleteListener { profileResult ->
-                                FirebaseFirestore.getInstance()
-                                    .collection("users")
-                                    .document(user.uid)
-                                    .set(userData)
-                                    .addOnCompleteListener {
-                                        user.sendEmailVerification().addOnCompleteListener {
+                                ensureUserProfile(user, trimmedUsername)
+                                    .addOnCompleteListener { firestoreResult ->
+                                        user.sendEmailVerification().addOnCompleteListener { verificationResult ->
                                             FirebaseAuth.getInstance().signOut()
                                             loading = false
-                                            if (profileResult.isSuccessful) showSuccessPopup = true
-                                            else profileWarning = true
+                                            if (profileResult.isSuccessful && firestoreResult.isSuccessful &&
+                                                verificationResult.isSuccessful
+                                            ) {
+                                                showSuccessPopup = true
+                                            } else {
+                                                notice = buildString {
+                                                    append("Akun sudah dibuat. Jangan daftar ulang. ")
+                                                    if (!firestoreResult.isSuccessful) {
+                                                        append("Profil belum tersimpan di Firestore; coba masuk kembali untuk mengulang penyimpanan. ")
+                                                    }
+                                                    if (!profileResult.isSuccessful) {
+                                                        append("Nama akun belum tersimpan di Authentication. ")
+                                                    }
+                                                    if (!verificationResult.isSuccessful) {
+                                                        append("Email verifikasi belum terkirim; coba masuk untuk mengirim ulang.")
+                                                    } else {
+                                                        append("Periksa email untuk verifikasi akun.")
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                             }
@@ -415,16 +421,6 @@ fun RegisterScreen(
                 Spacer(Modifier.height((100 * gapScale).dp))
             }
         }
-    }
-    if (profileWarning) {
-        AlertDialog(
-            onDismissRequest = { profileWarning = false; showSuccessPopup = true },
-            title = { Text("Akun berhasil dibuat") },
-            text = { Text("Nama pengguna belum berhasil disimpan. Akun tetap bisa digunakan untuk masuk.") },
-            confirmButton = {
-                TextButton(onClick = { profileWarning = false; showSuccessPopup = true }) { Text("Lanjutkan") }
-            },
-        )
     }
     notice?.let { message ->
         AlertDialog(

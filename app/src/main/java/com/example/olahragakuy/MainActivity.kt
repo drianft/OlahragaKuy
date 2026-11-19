@@ -21,16 +21,6 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
-        )
-        setContent {
-            OlahragaKuyTheme {
-                ProfileScreen(
-                    onBack = { finish() },
-                    onLogout = { finish() }
-                )
-            }
-        }
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         setContent { OlahragaKuyTheme { AuthNavigation(onExit = { finish() }) } }

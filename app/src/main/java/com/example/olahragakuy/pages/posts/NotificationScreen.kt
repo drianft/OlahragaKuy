@@ -159,6 +159,7 @@ fun NotificationScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     initialSelectedPostId: String? = null,
+    onUserProfileClick: (userId: String, displayName: String) -> Unit = { _, _ -> },
 ) {
     val isPreview = LocalInspectionMode.current
     var remoteNotifications by remember {
@@ -452,6 +453,7 @@ fun NotificationScreen(
                             },
                             onAction = { notice = it },
                             onCommentClick = { activeCommentPostId = post.id },
+                            onAuthorClick = { onUserProfileClick(post.authorId, post.authorName) },
                         )
                     }
                 }
@@ -513,9 +515,14 @@ fun NotificationScreen(
                                     avatarColor = NotificationAvatarColors[
                                         index % NotificationAvatarColors.size
                                     ],
+                                    onAvatarClick = {
+                                        onUserProfileClick(item.actorId, item.actorName)
+                                    },
                                     onClick = {
                                         if (item.postId.isNotBlank()) {
                                             selectedPostId = item.postId
+                                        } else {
+                                            onUserProfileClick(item.actorId, item.actorName)
                                         }
                                     },
                                 )
@@ -547,6 +554,7 @@ fun NotificationScreen(
 private fun NotificationItemRow(
     item: NotificationUiModel,
     avatarColor: Color,
+    onAvatarClick: () -> Unit,
     onClick: () -> Unit,
 ) {
     Row(
@@ -558,12 +566,20 @@ private fun NotificationItemRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        KuyUserAvatar(
-            name = item.actorName,
-            size = 38.dp,
-            fontSize = 15.sp,
-            backgroundColor = avatarColor,
-        )
+        Box(
+            modifier = Modifier.clickable(
+                role = Role.Button,
+                onClickLabel = "Buka profil ${item.actorName}",
+                onClick = onAvatarClick,
+            ),
+        ) {
+            KuyUserAvatar(
+                name = item.actorName,
+                size = 38.dp,
+                fontSize = 15.sp,
+                backgroundColor = avatarColor,
+            )
+        }
         Text(
             text = buildAnnotatedString {
                 withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {

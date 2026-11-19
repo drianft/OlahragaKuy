@@ -215,6 +215,7 @@ fun HomePostCard(
     modifier: Modifier = Modifier,
     isLiked: Boolean = false,
     onLikeClick: (() -> Unit)? = null,
+    onAuthorClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier
@@ -234,29 +235,47 @@ fun HomePostCard(
                 Color(0xFF7FA7E8),
             )
             val avatarColor = avatarPalette[post.authorName.hashCode().mod(avatarPalette.size)]
-            KuyUserAvatar(
-                name = post.authorName,
-                size = 50.dp,
-                fontSize = 20.sp,
-                backgroundColor = avatarColor,
-            )
-            Column(Modifier.weight(1f)) {
-                Text(post.authorName, color = HomeText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                if (post.taggedNames.isNotEmpty()) {
-                    Text(
-                        "bersama ${post.taggedNames.joinToString()}",
-                        color = HomeText.copy(alpha = 0.8f),
-                        fontSize = 12.sp,
-                    )
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (onAuthorClick != null) {
+                            Modifier.clickable(
+                                role = Role.Button,
+                                onClickLabel = "Buka profil ${post.authorName}",
+                                onClick = onAuthorClick,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                KuyUserAvatar(
+                    name = post.authorName,
+                    size = 50.dp,
+                    fontSize = 20.sp,
+                    backgroundColor = avatarColor,
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(post.authorName, color = HomeText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    if (post.taggedNames.isNotEmpty()) {
+                        Text(
+                            "bersama ${post.taggedNames.joinToString()}",
+                            color = HomeText.copy(alpha = 0.8f),
+                            fontSize = 12.sp,
+                        )
+                    }
+                    if (post.category.isNotBlank()) {
+                        Text(
+                            post.category,
+                            color = HomeText.copy(alpha = 0.7f),
+                            fontSize = 11.sp,
+                        )
+                    }
+                    Text(post.time, color = HomeOrange, fontSize = 12.sp)
                 }
-                if (post.category.isNotBlank()) {
-                    Text(
-                        post.category,
-                        color = HomeText.copy(alpha = 0.7f),
-                        fontSize = 11.sp,
-                    )
-                }
-                Text(post.time, color = HomeOrange, fontSize = 12.sp)
             }
             TextButton(onClick = { onAction("Menu postingan belum tersedia.") }) {
                 Text("⋮", color = HomeText, fontSize = 28.sp)

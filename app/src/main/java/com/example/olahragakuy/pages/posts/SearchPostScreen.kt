@@ -86,6 +86,7 @@ fun SearchPostScreen(
     modifier: Modifier = Modifier,
     initialQuery: String = "",
     initialShowResults: Boolean = false,
+    onUserProfileClick: (userId: String, displayName: String) -> Unit = { _, _ -> },
 ) {
     val isPreview = LocalInspectionMode.current
     val focusManager = LocalFocusManager.current
@@ -273,6 +274,7 @@ fun SearchPostScreen(
                             },
                             onAction = { notice = it },
                             onCommentClick = { activeCommentPostId = post.id },
+                            onAuthorClick = { onUserProfileClick(post.authorId, post.authorName) },
                         )
                     }
                 }

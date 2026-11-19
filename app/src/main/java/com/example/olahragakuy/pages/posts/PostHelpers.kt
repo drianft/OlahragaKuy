@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.example.olahragakuy.pages.profile.user.ensureUserProfile
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -510,26 +511,13 @@ fun submitNewPost(
     }
 }
 
-/** Menyinkronkan profil pengguna Firebase Auth aktif ke dokumen `users/{uid}` di Firestore. */
-fun syncCurrentUserToFirestore() {
+/** Membuat profil akun lama bila belum tersedia tanpa menimpa profil yang sudah diedit. */
+fun syncCurrentUserToFirestore(onError: (String) -> Unit = {}) {
     val user = currentUserOrNull() ?: return
-    val displayName = user.resolveDisplayName("")
-    if (displayName.isBlank()) return
-    try {
-        val db = FirebaseFirestore.getInstance()
-        val payload = hashMapOf<String, Any>(
-            "displayName" to displayName,
-            "username" to displayName,
-            "name" to displayName,
-            "updatedAt" to FieldValue.serverTimestamp(),
-        )
-        user.photoUrl?.toString()?.takeIf { it.isNotBlank() }?.let {
-            payload["photoUrl"] = it
+    ensureUserProfile(user).addOnFailureListener {
+        if (currentUserOrNull()?.uid == user.uid) {
+            onError("Profil belum tersimpan di Firestore. Periksa koneksi dan izin database, lalu buka kembali beranda.")
         }
-        db.collection("users")
-            .document(user.uid)
-            .set(payload, SetOptions.merge())
-    } catch (_: Exception) {
     }
 }
 

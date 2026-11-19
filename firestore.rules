@@ -105,7 +105,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create, update: if isOwner(userId)
-        && hasOnlyAllowedFields(['displayName', 'username', 'name', 'photoUrl', 'avatarUrl', 'followersCount', 'followingCount', 'postsCount', 'updatedAt']);
+        && hasOnlyAllowedFields(['displayName', 'username', 'name', 'bio', 'photoUrl', 'avatarUrl', 'followersCount', 'followingCount', 'postsCount', 'updatedAt']);
       allow delete: if false;
 
       match /following/{friendId} {
