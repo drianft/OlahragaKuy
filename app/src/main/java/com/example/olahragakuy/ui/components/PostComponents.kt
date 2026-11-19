@@ -215,6 +215,7 @@ fun HomePostCard(
     modifier: Modifier = Modifier,
     isLiked: Boolean = false,
     onLikeClick: (() -> Unit)? = null,
+    preparedImage: androidx.compose.ui.graphics.painter.Painter? = null,
 ) {
     Column(
         modifier
@@ -263,7 +264,15 @@ fun HomePostCard(
             }
         }
         Text(post.caption, color = HomeText, fontSize = 14.sp)
-        if (post.imageUrl != null) {
+        if (post.imageUrl != null && preparedImage != null) {
+            Image(
+                painter = preparedImage,
+                contentDescription = "Foto postingan oleh ${post.authorName}",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().aspectRatio(1.28f)
+                    .clip(RoundedCornerShape(24.dp)),
+            )
+        } else if (post.imageUrl != null) {
             SubcomposeAsyncImage(
                 model = post.imageUrl,
                 contentDescription = "Foto postingan oleh ${post.authorName}",

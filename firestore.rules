@@ -104,7 +104,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create, update: if isOwner(userId)
+      allow create, update: if isAuthenticated()
         && hasOnlyAllowedFields(['displayName', 'username', 'name', 'photoUrl', 'avatarUrl', 'followersCount', 'followingCount', 'postsCount', 'updatedAt']);
       allow delete: if false;
 
@@ -225,17 +225,17 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated()
+        allow create, update: if isAuthenticated()
           && hasRequiredFields(['senderId', 'senderName', 'text', 'createdAt'])
           && hasOnlyAllowedFields(['senderId', 'senderName', 'text', 'timeText', 'createdAt'])
-          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderId is string
           && request.resource.data.senderName is string
           && request.resource.data.senderName.size() > 0
           && request.resource.data.senderName.size() <= 100
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 2000;
-        allow update, delete: if false;
+        allow delete: if false;
       }
     }
   }
