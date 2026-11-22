@@ -73,6 +73,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.R
+import com.example.olahragakuy.pages.venuefinder.VenueChatBridge
+import com.example.olahragakuy.pages.venuefinder.parseVenueInviteMap
 import com.example.olahragakuy.ui.components.KuyBackButton
 import com.example.olahragakuy.ui.components.KuyPostSearchBar
 import com.example.olahragakuy.ui.components.KuyUserAvatar
@@ -441,11 +443,31 @@ fun ChatScreen(
     initialSelectedRoomId: String? = null,
     initialDirectRoom: ChatRoomUiModel? = null,
     exitOnDetailBack: Boolean = false,
+    onOpenVenueFinder: ((String) -> Unit)? = null,
 ) {
     val isPreview = LocalInspectionMode.current
-    var selectedTab by rememberSaveable { mutableStateOf(initialTab) }
+    val initialPendingTarget = remember(isPreview, initialSelectedRoomId, initialDirectRoom) {
+        if (isPreview || initialSelectedRoomId != null || initialDirectRoom != null) {
+            null
+        } else {
+            VenueChatBridge.peekPendingTarget()
+        }
+    }
+    var pendingVenueRoom by remember { mutableStateOf(initialPendingTarget?.room) }
+    var selectedTab by rememberSaveable {
+        mutableStateOf(
+            when {
+                initialPendingTarget != null -> {
+                    if (initialPendingTarget.isGroup) ChatTab.KOMUNITAS else ChatTab.ORANG
+                }
+                else -> initialTab
+            },
+        )
+    }
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var selectedRoomId by rememberSaveable { mutableStateOf(initialSelectedRoomId ?: initialDirectRoom?.id) }
+    var selectedRoomId by rememberSaveable {
+        mutableStateOf(initialPendingTarget?.roomId ?: initialSelectedRoomId ?: initialDirectRoom?.id)
+    }
     var showCreateGroupDialog by rememberSaveable { mutableStateOf(false) }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -467,6 +489,16 @@ fun ChatScreen(
     val currentUserName = remember(currentUser) { currentUser.resolveDisplayName("Anda") }
 
     if (!isPreview) {
+        LaunchedEffect(initialSelectedRoomId, initialDirectRoom) {
+            if (initialSelectedRoomId == null && initialDirectRoom == null) {
+                VenueChatBridge.consumePendingTarget()?.let { target ->
+                    pendingVenueRoom = target.room
+                    selectedTab = if (target.isGroup) ChatTab.KOMUNITAS else ChatTab.ORANG
+                    selectedRoomId = target.roomId
+                }
+            }
+        }
+
         LaunchedEffect(currentUser?.uid) {
             syncCurrentUserToFirestore()
             seedInitialFirestoreCollectionsIfNeeded {
@@ -552,11 +584,24 @@ fun ChatScreen(
         }
     }
 
-    val allRooms = remember(isPreview, LocalChatRooms.toList(), remoteRooms, followingFriends, currentUserId, currentUserName, initialDirectRoom) {
+    val allRooms = remember(
+        isPreview,
+        LocalChatRooms.toList(),
+        remoteRooms,
+        followingFriends,
+        currentUserId,
+        currentUserName,
+        initialDirectRoom,
+        pendingVenueRoom,
+    ) {
         if (isPreview) {
             DefaultChatRooms
         } else {
-            val combined = (remoteRooms + LocalChatRooms.toList() + listOfNotNull(initialDirectRoom)).distinctBy { it.id }
+            val combined = (
+                remoteRooms +
+                    LocalChatRooms.toList() +
+                    listOfNotNull(pendingVenueRoom, initialDirectRoom)
+                ).distinctBy { it.id }
             mergeChatRoomsWithFollowing(
                 existingRooms = combined,
                 followingFriends = followingFriends,
@@ -566,8 +611,9 @@ fun ChatScreen(
         }
     }
 
-    val activeRoom = remember(allRooms, selectedRoomId, initialDirectRoom) {
+    val activeRoom = remember(allRooms, selectedRoomId, initialDirectRoom, pendingVenueRoom) {
         allRooms.firstOrNull { it.id == selectedRoomId }
+            ?: pendingVenueRoom?.takeIf { it.id == selectedRoomId }
             ?: initialDirectRoom?.takeIf { it.id == selectedRoomId }
     }
 
@@ -587,7 +633,11 @@ fun ChatScreen(
             onBack = handleDetailBack,
             onCallClick = { notice = "Fitur panggilan suara segera hadir." },
             onVenueDetailClick = { venueTitle ->
-                notice = "Membuka detail lokasi $venueTitle."
+                if (onOpenVenueFinder != null) {
+                    onOpenVenueFinder(venueTitle)
+                } else {
+                    notice = "Membuka detail lokasi $venueTitle."
+                }
             },
             modifier = modifier,
         )
@@ -919,6 +969,7 @@ private fun ChatDetailContent(
                                 val senderId = doc.getString("senderId").orEmpty()
                                 val senderName = doc.getString("senderName") ?: "Teman"
                                 val text = doc.getString("text") ?: ""
+                                val venueInvite = parseVenueInviteMap(doc.get("venueInvite"))
                                 val ts = doc.getTimestamp("createdAt")?.toDate()
                                 val timeStr = doc.getString("timeText")
                                     ?: ts?.let { fmt.format(it) }
@@ -930,6 +981,7 @@ private fun ChatDetailContent(
                                     text = text,
                                     timeText = timeStr,
                                     isFromMe = senderId == currentUserId || senderName == "Anda",
+                                    venueInvite = venueInvite,
                                     createdAtMillis = ts?.time ?: System.currentTimeMillis(),
                                 )
                             }
@@ -947,7 +999,9 @@ private fun ChatDetailContent(
         LocalChatMessages[room.id].orEmpty()
     }
     val messages = remember(localMessages, remoteMessages) {
-        (localMessages + remoteMessages).distinctBy { it.id }
+        (remoteMessages + localMessages)
+            .distinctBy { it.id }
+            .sortedBy { it.createdAtMillis }
     }
 
     val sendMessage: () -> Unit = {
@@ -1173,22 +1227,54 @@ private fun ChatMessageBubbleRow(
     }
 
     if (message.venueInvite != null) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.Top,
-        ) {
-            VenueInviteCard(
-                invite = message.venueInvite,
-                onClick = { onVenueDetailClick(message.venueInvite.title) },
-            )
-            Spacer(Modifier.width(8.dp))
-            KuyUserAvatar(
-                name = message.senderName,
-                size = 26.dp,
-                fontSize = 11.sp,
-                backgroundColor = Color(0xFFFFE35B),
-            )
+        if (message.isFromMe) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.Top,
+            ) {
+                VenueInviteCard(
+                    invite = message.venueInvite,
+                    timeText = message.timeText,
+                    onClick = { onVenueDetailClick(message.venueInvite.title) },
+                )
+                Spacer(Modifier.width(8.dp))
+                KuyUserAvatar(
+                    name = message.senderName,
+                    size = 26.dp,
+                    fontSize = 11.sp,
+                    backgroundColor = Color(0xFFFFE35B),
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.Top,
+            ) {
+                KuyUserAvatar(
+                    name = message.senderName,
+                    size = 26.dp,
+                    fontSize = 11.sp,
+                    backgroundColor = senderColor,
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (isGroup) {
+                        Text(
+                            text = message.senderName,
+                            color = HomeText.copy(alpha = 0.85f),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                        )
+                    }
+                    VenueInviteCard(
+                        invite = message.venueInvite,
+                        timeText = message.timeText,
+                        onClick = { onVenueDetailClick(message.venueInvite.title) },
+                    )
+                }
+            }
         }
         return
     }
@@ -1292,8 +1378,10 @@ private fun ChatMessageBubbleRow(
 @Composable
 private fun VenueInviteCard(
     invite: VenueInviteUiModel,
+    timeText: String = "",
     onClick: () -> Unit,
 ) {
+    val badgeIcon = if (invite.sport.contains("basket", ignoreCase = true)) "🏀" else "📍"
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = HomeBlue,
@@ -1309,11 +1397,15 @@ private fun VenueInviteCard(
                 color = HomeText,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = invite.sport,
                 color = HomeText.copy(alpha = 0.8f),
                 fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Box(
                 modifier = Modifier
@@ -1324,28 +1416,54 @@ private fun VenueInviteCard(
                         Brush.linearGradient(
                             listOf(Color(0xFF2D5F8B), Color(0xFF4F87B8)),
                         ),
-                    ),
+                    )
+                    .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("🏀  ${invite.title}", color = HomeText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "$badgeIcon  ${invite.title}",
+                    color = HomeText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
             }
-            Text(
-                text = invite.description,
-                color = HomeText,
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
-            )
-            Button(
-                onClick = onClick,
-                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
-                modifier = Modifier.height(28.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = KuyButton,
-                    contentColor = HomeText,
-                ),
+            if (invite.description.isNotBlank()) {
+                Text(
+                    text = invite.description,
+                    color = HomeText,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Lihat", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Button(
+                    onClick = onClick,
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = KuyButton,
+                        contentColor = HomeText,
+                    ),
+                ) {
+                    Text("Lihat", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+                if (timeText.isNotBlank()) {
+                    Text(
+                        text = timeText,
+                        color = HomeText.copy(alpha = 0.75f),
+                        fontSize = 9.sp,
+                    )
+                }
             }
         }
     }
