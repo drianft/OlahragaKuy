@@ -66,6 +66,6 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.cloudinary:cloudinary-android:3.1.3")
     implementation(libs.coil.compose)
-    implementation(libs.osmdroid.android)
+    implementation(libs.maplibre.android.sdk)
     implementation(libs.play.services.location)
 }

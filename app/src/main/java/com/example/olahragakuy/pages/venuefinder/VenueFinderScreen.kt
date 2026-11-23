@@ -12,6 +12,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -19,12 +21,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,6 +44,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import com.example.olahragakuy.pages.posts.currentUserOrNull
 import com.example.olahragakuy.pages.posts.resolveDisplayName
 import com.example.olahragakuy.ui.components.HomeNavTab
@@ -92,6 +99,10 @@ fun VenueFinderScreen(
     var initialUserCenterCoordinate by remember(initialFocusedVenueName) {
         mutableStateOf<GeoCoordinate?>(null)
     }
+    var recenterToUserRequest by remember { mutableIntStateOf(0) }
+    var locationRefreshRequest by remember { mutableIntStateOf(0) }
+    var pendingManualRecenter by remember { mutableStateOf(false) }
+    var pendingPermissionRecenter by remember { mutableStateOf(false) }
     var hasRequestedPermission by rememberSaveable { mutableStateOf(false) }
     var locationPermissionGranted by remember {
         mutableStateOf(!isPreview && hasLocationPermission(context))
@@ -105,10 +116,25 @@ fun VenueFinderScreen(
             grantResults[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         locationPermissionGranted = granted
         if (!granted) {
+            val wasManualRequest = pendingPermissionRecenter
+            pendingPermissionRecenter = false
+            pendingManualRecenter = false
             uiState = uiState.copy(
                 userLocation = DefaultUsuCoordinate,
                 isUsingFallbackLocation = true,
             )
+            if (wasManualRequest) {
+                Toast.makeText(
+                    context,
+                    "Izin lokasi diperlukan untuk memusatkan ke posisi kamu",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        } else if (pendingPermissionRecenter) {
+            pendingPermissionRecenter = false
+            pendingManualRecenter = true
+            locationRefreshRequest++
+            recenterToUserRequest++
         }
     }
 
@@ -127,14 +153,21 @@ fun VenueFinderScreen(
         }
 
         // Ambil koordinat GPS perangkat dengan fallback otomatis ke kawasan USU Medan.
-        DisposableEffect(locationPermissionGranted) {
+        DisposableEffect(locationPermissionGranted, locationRefreshRequest) {
             val cancelLocationRequest = fetchCurrentUserLocation(
                 context = context,
                 onLocationResolved = { coordinate, isFallback ->
+                    val previousLocation = uiState.userLocation
                     uiState = uiState.copy(
                         userLocation = coordinate,
                         isUsingFallbackLocation = isFallback,
                     )
+                    if (pendingManualRecenter) {
+                        pendingManualRecenter = false
+                        if (!isFallback && haversineDistanceMeters(previousLocation, coordinate) >= 5.0) {
+                            recenterToUserRequest++
+                        }
+                    }
                     if (
                         !isFallback &&
                         !hasAutoCenteredInitialUser &&
@@ -198,6 +231,8 @@ fun VenueFinderScreen(
             if (matched != null) {
                 hasAppliedInitialFocus = true
                 hasAutoCenteredInitialUser = true
+                pendingManualRecenter = false
+                pendingPermissionRecenter = false
                 uiState = uiState.copy(
                     selectedSportFilter = VenueSportFilter.ALL,
                     selectedRadiusFilter = VenueRadiusFilter.ALL,
@@ -312,6 +347,8 @@ fun VenueFinderScreen(
 
     val startRouteMode: (VenueUiModel) -> Unit = { venue ->
         dismissSearchUi()
+        pendingManualRecenter = false
+        pendingPermissionRecenter = false
         activeRouteJob?.cancel()
         val origin = uiState.userLocation
         uiState = uiState.copy(
@@ -336,6 +373,8 @@ fun VenueFinderScreen(
 
     val focusVenueOnMap: (VenueUiModel) -> Unit = { venue ->
         dismissSearchUi()
+        pendingManualRecenter = false
+        pendingPermissionRecenter = false
         activeRouteJob?.cancel()
         activeRouteJob = null
         uiState = uiState.copy(
@@ -349,10 +388,36 @@ fun VenueFinderScreen(
 
     val openVenueDetail: (VenueUiModel) -> Unit = { venue ->
         dismissSearchUi()
+        pendingManualRecenter = false
+        pendingPermissionRecenter = false
         uiState = uiState.copy(
             selectedVenue = venue,
             mode = VenueFinderMode.DETAIL,
         )
+    }
+
+    val handleMyLocationClick: () -> Unit = {
+        dismissSearchUi()
+        if (isPreview) {
+            recenterToUserRequest++
+        } else {
+            val hasPermissionNow = hasLocationPermission(context)
+            locationPermissionGranted = hasPermissionNow
+            if (!hasPermissionNow) {
+                pendingPermissionRecenter = true
+                hasRequestedPermission = true
+                permissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                    ),
+                )
+            } else {
+                pendingManualRecenter = true
+                locationRefreshRequest++
+                recenterToUserRequest++
+            }
+        }
     }
 
     val openShareSheet: () -> Unit = {
@@ -401,12 +466,16 @@ fun VenueFinderScreen(
             onVenueClick = { venue ->
                 dismissSearchUi()
                 hasAutoCenteredInitialUser = true
+                pendingManualRecenter = false
+                pendingPermissionRecenter = false
                 uiState = uiState.copy(selectedVenue = venue)
             },
             onVenueDetailClick = openVenueDetail,
             userName = currentUserName,
             userPhotoUrl = currentUserPhotoUrl,
             initialUserCenterCoordinate = initialUserCenterCoordinate,
+            recenterToUserRequest = recenterToUserRequest,
+            onUserLocationClick = handleMyLocationClick,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -474,41 +543,38 @@ fun VenueFinderScreen(
             )
         }
 
-        // Panel & Bottom Sheet sesuai 4 state aktif (dengan ruang aman di atas Bottom Navigation Bar).
-        AnimatedContent(
-            targetState = uiState.mode,
-            transitionSpec = {
-                (fadeIn() + slideInVertically { it / 3 }) togetherWith
-                    (fadeOut() + slideOutVertically { it / 3 })
-            },
-            label = "VenueOverlaySheetTransition",
-            modifier = Modifier.align(Alignment.BottomCenter),
-        ) { mode ->
-            val selectedVenue = uiState.selectedVenue
-            when (mode) {
-                VenueFinderMode.DEFAULT -> {
-                    VenueDefaultBottomPanel(
-                        isLoadingVenues = uiState.isLoadingVenues,
-                        isEmptyResult = isEmptyFilterResult,
-                        hasActiveFilters = hasActiveFilters,
-                        onResetFilters = resetFilters,
-                        bottomContentPadding = VenueBottomNavClearance,
-                    )
-                }
+        // Tombol melayang "Posisi Saya" + Panel/Bottom Sheet sesuai 4 state aktif.
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+        ) {
+            AnimatedVisibility(
+                visible = uiState.mode != VenueFinderMode.SHARE && !showFilterSheet,
+                enter = fadeIn() + scaleIn(initialScale = 0.85f),
+                exit = fadeOut() + scaleOut(targetScale = 0.85f),
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(end = 16.dp, bottom = 14.dp),
+            ) {
+                VenueMyLocationButton(
+                    onClick = handleMyLocationClick,
+                    isLocationPermissionGranted = locationPermissionGranted,
+                )
+            }
 
-                VenueFinderMode.DETAIL -> {
-                    if (selectedVenue != null) {
-                        VenueDetailBottomSheet(
-                            venue = selectedVenue,
-                            onBackClick = {
-                                uiState = uiState.copy(mode = VenueFinderMode.DEFAULT)
-                            },
-                            onInviteClick = openShareSheet,
-                            onLocationClick = { startRouteMode(selectedVenue) },
-                            isLoadingRoute = uiState.isLoadingRoute,
-                            bottomContentPadding = VenueBottomNavClearance,
-                        )
-                    } else {
+            AnimatedContent(
+                targetState = uiState.mode,
+                transitionSpec = {
+                    (fadeIn() + slideInVertically { it / 3 }) togetherWith
+                        (fadeOut() + slideOutVertically { it / 3 })
+                },
+                label = "VenueOverlaySheetTransition",
+                modifier = Modifier.fillMaxWidth(),
+            ) { mode ->
+                val selectedVenue = uiState.selectedVenue
+                when (mode) {
+                    VenueFinderMode.DEFAULT -> {
                         VenueDefaultBottomPanel(
                             isLoadingVenues = uiState.isLoadingVenues,
                             isEmptyResult = isEmptyFilterResult,
@@ -517,70 +583,93 @@ fun VenueFinderScreen(
                             bottomContentPadding = VenueBottomNavClearance,
                         )
                     }
-                }
 
-                VenueFinderMode.ROUTE -> {
-                    if (selectedVenue != null) {
-                        VenueRoutePanel(
-                            venue = selectedVenue,
-                            routeInfo = uiState.routeInfo,
-                            isLoadingRoute = uiState.isLoadingRoute,
-                            onStopClick = stopRouteMode,
-                            bottomContentPadding = VenueBottomNavClearance,
-                        )
-                    } else {
-                        VenueDefaultBottomPanel(
-                            isLoadingVenues = uiState.isLoadingVenues,
-                            isEmptyResult = isEmptyFilterResult,
-                            hasActiveFilters = hasActiveFilters,
-                            onResetFilters = resetFilters,
-                            bottomContentPadding = VenueBottomNavClearance,
-                        )
+                    VenueFinderMode.DETAIL -> {
+                        if (selectedVenue != null) {
+                            VenueDetailBottomSheet(
+                                venue = selectedVenue,
+                                onBackClick = {
+                                    uiState = uiState.copy(mode = VenueFinderMode.DEFAULT)
+                                },
+                                onInviteClick = openShareSheet,
+                                onLocationClick = { startRouteMode(selectedVenue) },
+                                isLoadingRoute = uiState.isLoadingRoute,
+                                bottomContentPadding = VenueBottomNavClearance,
+                            )
+                        } else {
+                            VenueDefaultBottomPanel(
+                                isLoadingVenues = uiState.isLoadingVenues,
+                                isEmptyResult = isEmptyFilterResult,
+                                hasActiveFilters = hasActiveFilters,
+                                onResetFilters = resetFilters,
+                                bottomContentPadding = VenueBottomNavClearance,
+                            )
+                        }
                     }
-                }
 
-                VenueFinderMode.SHARE -> {
-                    if (selectedVenue != null) {
-                        VenueShareBottomSheet(
-                            venue = selectedVenue,
-                            recipients = uiState.shareRecipients,
-                            onCopyLinkClick = {
-                                val copied = copyVenueLinkToClipboard(context, selectedVenue)
-                                Toast.makeText(
-                                    context,
-                                    if (copied) "Tautan lokasi disalin" else "Gagal menyalin tautan",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            },
-                            onRecipientClick = { recipient ->
-                                val target = VenueChatBridge.sendVenueInvite(
-                                    venue = selectedVenue,
-                                    recipient = recipient,
-                                    currentUserId = currentUserId,
-                                    currentUserName = currentUserName,
-                                    syncToFirestore = !isPreview,
-                                )
-                                uiState = uiState.copy(mode = VenueFinderMode.DETAIL)
-                                Toast.makeText(
-                                    context,
-                                    "Ajakan dikirim ke ${recipient.name}",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                                onNavigateToChat(target)
-                            },
-                            onDismissClick = {
-                                uiState = uiState.copy(mode = VenueFinderMode.DETAIL)
-                            },
-                            bottomContentPadding = VenueBottomNavClearance,
-                        )
-                    } else {
-                        VenueDefaultBottomPanel(
-                            isLoadingVenues = uiState.isLoadingVenues,
-                            isEmptyResult = isEmptyFilterResult,
-                            hasActiveFilters = hasActiveFilters,
-                            onResetFilters = resetFilters,
-                            bottomContentPadding = VenueBottomNavClearance,
-                        )
+                    VenueFinderMode.ROUTE -> {
+                        if (selectedVenue != null) {
+                            VenueRoutePanel(
+                                venue = selectedVenue,
+                                routeInfo = uiState.routeInfo,
+                                isLoadingRoute = uiState.isLoadingRoute,
+                                onStopClick = stopRouteMode,
+                                bottomContentPadding = VenueBottomNavClearance,
+                            )
+                        } else {
+                            VenueDefaultBottomPanel(
+                                isLoadingVenues = uiState.isLoadingVenues,
+                                isEmptyResult = isEmptyFilterResult,
+                                hasActiveFilters = hasActiveFilters,
+                                onResetFilters = resetFilters,
+                                bottomContentPadding = VenueBottomNavClearance,
+                            )
+                        }
+                    }
+
+                    VenueFinderMode.SHARE -> {
+                        if (selectedVenue != null) {
+                            VenueShareBottomSheet(
+                                venue = selectedVenue,
+                                recipients = uiState.shareRecipients,
+                                onCopyLinkClick = {
+                                    val copied = copyVenueLinkToClipboard(context, selectedVenue)
+                                    Toast.makeText(
+                                        context,
+                                        if (copied) "Tautan lokasi disalin" else "Gagal menyalin tautan",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
+                                onRecipientClick = { recipient ->
+                                    val target = VenueChatBridge.sendVenueInvite(
+                                        venue = selectedVenue,
+                                        recipient = recipient,
+                                        currentUserId = currentUserId,
+                                        currentUserName = currentUserName,
+                                        syncToFirestore = !isPreview,
+                                    )
+                                    uiState = uiState.copy(mode = VenueFinderMode.DETAIL)
+                                    Toast.makeText(
+                                        context,
+                                        "Ajakan dikirim ke ${recipient.name}",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                    onNavigateToChat(target)
+                                },
+                                onDismissClick = {
+                                    uiState = uiState.copy(mode = VenueFinderMode.DETAIL)
+                                },
+                                bottomContentPadding = VenueBottomNavClearance,
+                            )
+                        } else {
+                            VenueDefaultBottomPanel(
+                                isLoadingVenues = uiState.isLoadingVenues,
+                                isEmptyResult = isEmptyFilterResult,
+                                hasActiveFilters = hasActiveFilters,
+                                onResetFilters = resetFilters,
+                                bottomContentPadding = VenueBottomNavClearance,
+                            )
+                        }
                     }
                 }
             }

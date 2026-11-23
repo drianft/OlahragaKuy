@@ -975,6 +975,42 @@ class VenueFinderLogicTest {
         assertTrue(mergedInviteMsg.isFromMe)
     }
 
+    // -------------------------------------------------------------------------
+    // Restyling Warna Vector Map Dark Navy
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun resolveDarkNavyFillColorArgb_mapsWaterParkAndLandCategoriesCorrectly() {
+        assertEquals(0xFF0B1524.toInt(), resolveDarkNavyFillColorArgb("water"))
+        assertEquals(0xFF0B1524.toInt(), resolveDarkNavyFillColorArgb("ocean_fill"))
+        assertEquals(0xFF142A36.toInt(), resolveDarkNavyFillColorArgb("park"))
+        assertEquals(0xFF142A36.toInt(), resolveDarkNavyFillColorArgb("landcover_wood"))
+        assertEquals(0xFF142A36.toInt(), resolveDarkNavyFillColorArgb("leisure_pitch"))
+        assertEquals(0xFF1A2B42.toInt(), resolveDarkNavyFillColorArgb("landuse_commercial"))
+        assertEquals(0xFF17263A.toInt(), resolveDarkNavyFillColorArgb("landuse_residential"))
+    }
+
+    @Test
+    fun resolveDarkNavyLineColorArgb_skipsAppRouteLayersAndPrioritizesCasing() {
+        // Layer rute oranye milik aplikasi wajib dilewati (null)
+        assertNull(resolveDarkNavyLineColorArgb("venue-route-casing-layer"))
+        assertNull(resolveDarkNavyLineColorArgb("venue-route-solid-layer"))
+        assertNull(resolveDarkNavyLineColorArgb("venue-route-dashed-layer"))
+
+        // Casing harus menang di atas keyword motorway/primary
+        assertEquals(0xFF0E1928.toInt(), resolveDarkNavyLineColorArgb("highway_motorway_casing"))
+        assertEquals(0xFF0E1928.toInt(), resolveDarkNavyLineColorArgb("road_primary_outline"))
+
+        // Air, jalan utama, batas/rel, dan jalan lokal
+        assertEquals(0xFF0B1524.toInt(), resolveDarkNavyLineColorArgb("waterway_tunnel"))
+        assertEquals(0xFF314B6E.toInt(), resolveDarkNavyLineColorArgb("highway_motorway_inner"))
+        assertEquals(0xFF314B6E.toInt(), resolveDarkNavyLineColorArgb("road_primary"))
+        assertEquals(0xFF263B57.toInt(), resolveDarkNavyLineColorArgb("boundary_country"))
+        assertEquals(0xFF263B57.toInt(), resolveDarkNavyLineColorArgb("railway_tunnel"))
+        assertEquals(0xFF233752.toInt(), resolveDarkNavyLineColorArgb("road_minor"))
+        assertEquals(0xFF233752.toInt(), resolveDarkNavyLineColorArgb("bridge_service"))
+    }
+
     private fun sampleVenue(
         id: String,
         name: String,

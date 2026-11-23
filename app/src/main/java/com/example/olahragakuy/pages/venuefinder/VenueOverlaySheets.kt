@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
@@ -1574,6 +1575,48 @@ private fun SheetDragHandle(modifier: Modifier = Modifier) {
             .clip(RoundedCornerShape(2.dp))
             .background(KuyText.copy(alpha = 0.35f)),
     )
+}
+
+/**
+ * Tombol bulat melayang bergaya Google Maps (`48.dp`) untuk memusatkan peta ke posisi pengguna.
+ */
+@Composable
+fun VenueMyLocationButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isLocationPermissionGranted: Boolean = true,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.size(48.dp),
+        shape = CircleShape,
+        color = HomeNavy.copy(alpha = 0.96f),
+        border = BorderStroke(1.dp, HomeBlue.copy(alpha = 0.9f)),
+        shadowElevation = 6.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Rounded.MyLocation,
+                contentDescription = "Posisi saya",
+                tint = if (isLocationPermissionGranted) HomeOrange else Color.White,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF142133)
+@Composable
+private fun VenueMyLocationButtonPreview() {
+    OlahragaKuyTheme {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            VenueMyLocationButton(onClick = {}, isLocationPermissionGranted = true)
+            VenueMyLocationButton(onClick = {}, isLocationPermissionGranted = false)
+        }
+    }
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFF0A1A2C)
