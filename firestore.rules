@@ -227,14 +227,21 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated()
           && hasRequiredFields(['senderId', 'senderName', 'text', 'createdAt'])
-          && hasOnlyAllowedFields(['senderId', 'senderName', 'text', 'timeText', 'createdAt'])
+          && hasOnlyAllowedFields(['senderId', 'senderName', 'text', 'timeText', 'venueInvite', 'createdAt'])
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.senderName is string
           && request.resource.data.senderName.size() > 0
           && request.resource.data.senderName.size() <= 100
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+          && request.resource.data.text.size() <= 2000
+          && (!('timeText' in request.resource.data) || (request.resource.data.timeText is string && request.resource.data.timeText.size() <= 32))
+          && (!('venueInvite' in request.resource.data) || (
+            request.resource.data.venueInvite is map
+            && request.resource.data.venueInvite.title is string
+            && request.resource.data.venueInvite.title.size() > 0
+            && request.resource.data.venueInvite.title.size() <= 200
+          ));
         allow update, delete: if false;
       }
     }

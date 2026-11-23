@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.R
 import com.example.olahragakuy.pages.venuefinder.VenueChatBridge
+import com.example.olahragakuy.pages.venuefinder.parseVenueInviteFromFallbackText
 import com.example.olahragakuy.pages.venuefinder.parseVenueInviteMap
 import com.example.olahragakuy.ui.components.KuyBackButton
 import com.example.olahragakuy.ui.components.KuyPostSearchBar
@@ -84,6 +85,7 @@ import com.example.olahragakuy.ui.theme.HomeOrange
 import com.example.olahragakuy.ui.theme.HomeText
 import com.example.olahragakuy.ui.theme.KuyButton
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -296,9 +298,27 @@ private val DefaultRoomMessages: Map<String, List<ChatMessageUiModel>> = mapOf(
     ),
 )
 
+/** Konstanta path koleksi Firestore ruang obrolan & pesan agar 100% seragam di seluruh fitur. */
+const val FIRESTORE_CHATS_COLLECTION = "chats"
+const val FIRESTORE_CHAT_MESSAGES_SUBCOLLECTION = "messages"
+
 /** Menyimpan ruang obrolan dan pesan sesi aktif (kosong saat runtime, hanya diisi otomatis oleh data Firebase / aksi pengguna). */
 val LocalChatRooms = mutableStateListOf<ChatRoomUiModel>()
 val LocalChatMessages = mutableStateMapOf<String, List<ChatMessageUiModel>>()
+
+/** Mengecek apakah kandidat ID merupakan UID pengguna yang valid (bukan ID room/sintetis). */
+fun isValidChatUserUid(candidate: String, currentUserId: String = ""): Boolean {
+    val clean = candidate.trim()
+    if (clean.isEmpty() || clean == currentUserId.trim()) return false
+    if (clean.startsWith("dm_") ||
+        clean.startsWith("group_") ||
+        clean.startsWith("author_") ||
+        clean.startsWith("follow_")
+    ) {
+        return false
+    }
+    return true
+}
 
 /** Membentuk ID ruang obrolan personal (DM) deterministik antara dua akun Firebase. */
 fun directChatRoomId(uidA: String, uidB: String): String {
@@ -306,6 +326,88 @@ fun directChatRoomId(uidA: String, uidB: String): String {
     val cleanB = uidB.trim().ifEmpty { "friend" }
     val (first, second) = if (cleanA <= cleanB) cleanA to cleanB else cleanB to cleanA
     return "dm_${first}_$second"
+}
+
+/**
+ * Menentukan `roomId` kanonis baik untuk DM maupun grup komunitas:
+ * - DM selalu memakai [directChatRoomId] saat UID target valid agar 100% identik di pengirim & penerima.
+ * - Grup memakai ID dokumen grup pada koleksi `chats`.
+ */
+fun resolveChatRoomId(
+    isGroup: Boolean,
+    currentUserId: String,
+    targetId: String,
+    explicitRoomId: String? = null,
+): String {
+    val cleanExplicit = explicitRoomId?.trim().orEmpty()
+    val cleanTarget = targetId.trim()
+    return if (isGroup) {
+        cleanExplicit.ifEmpty { cleanTarget.ifEmpty { "group_${System.currentTimeMillis()}" } }
+    } else if (isValidChatUserUid(cleanTarget, currentUserId)) {
+        directChatRoomId(currentUserId, cleanTarget)
+    } else {
+        cleanExplicit.ifEmpty { directChatRoomId(currentUserId, cleanTarget) }
+    }
+}
+
+/** Menyusun payload dokumen metadata ruang chat `chats/{roomId}` sesuai skema `ChatScreen.kt`. */
+fun buildChatRoomFirestorePayload(
+    roomName: String,
+    isGroup: Boolean,
+    statusOrMembers: String,
+    lastMessage: String,
+    dateLabel: String,
+    participantIds: List<String>,
+    participantNames: List<String>,
+): Map<String, Any> = mapOf(
+    "name" to roomName.trim().ifEmpty { "Obrolan" }.take(100),
+    "isGroup" to isGroup,
+    "statusOrMembers" to statusOrMembers,
+    "lastMessage" to lastMessage,
+    "dateLabel" to dateLabel,
+    "participantIds" to participantIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+    "participantNames" to participantNames
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.equals("Anda", ignoreCase = true) }
+        .distinct(),
+    "updatedAt" to FieldValue.serverTimestamp(),
+)
+
+/** Menyusun payload dokumen pesan `chats/{roomId}/messages/{messageId}` sesuai skema `ChatScreen.kt`. */
+fun buildChatMessageFirestorePayload(
+    senderId: String,
+    senderName: String,
+    text: String,
+    timeText: String,
+    venueInvite: Map<String, Any>? = null,
+): Map<String, Any> = buildMap {
+    put("senderId", senderId.trim())
+    put("senderName", senderName.trim().ifEmpty { "Teman" }.take(100))
+    put("text", text.trim().ifEmpty { "Mengirim undangan olahraga" }.take(2000))
+    put("timeText", timeText.trim().take(32))
+    if (venueInvite != null) {
+        put("venueInvite", venueInvite)
+    }
+    put("createdAt", FieldValue.serverTimestamp())
+}
+
+/** Menggabungkan pesan Firestore dan cache lokal tanpa menghilangkan `venueInvite` yang sudah ada. */
+fun mergeChatMessages(
+    remoteMessages: List<ChatMessageUiModel>,
+    localMessages: List<ChatMessageUiModel>,
+): List<ChatMessageUiModel> {
+    val localById = localMessages.associateBy { it.id }
+    val mergedRemote = remoteMessages.map { remote ->
+        val local = localById[remote.id]
+        if (remote.venueInvite == null && local?.venueInvite != null) {
+            remote.copy(venueInvite = local.venueInvite)
+        } else {
+            remote
+        }
+    }
+    val remoteIds = mergedRemote.mapTo(HashSet()) { it.id }
+    val localOnly = localMessages.filterNot { it.id in remoteIds }
+    return (mergedRemote + localOnly).sortedBy { it.createdAtMillis }
 }
 
 /** Menyiapkan ruang DM antara pengguna aktif dan target agar langsung terbuka dan masuk ke log chat. */
@@ -524,11 +626,15 @@ fun ChatScreen(
             var registration: ListenerRegistration? = null
             try {
                 registration = FirebaseFirestore.getInstance()
-                    .collection("chats")
+                    .collection(FIRESTORE_CHATS_COLLECTION)
                     .orderBy("updatedAt", Query.Direction.DESCENDING)
                     .limit(50)
                     .addSnapshotListener { snap, error ->
-                        if (error == null && snap != null) {
+                        if (error != null) {
+                            android.util.Log.e("ChatScreen", "Gagal mendengarkan daftar chat: ${error.message}", error)
+                            return@addSnapshotListener
+                        }
+                        if (snap != null) {
                             remoteRooms = snap.documents.mapNotNull { doc ->
                                 val data = doc.data.orEmpty()
                                 val rawName = (data["name"] as? String)?.takeIf { it.isNotBlank() }
@@ -578,7 +684,8 @@ fun ChatScreen(
                             }
                         }
                     }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.e("ChatScreen", "Exception saat mendengarkan daftar chat: ${e.message}", e)
             }
             onDispose { registration?.remove() }
         }
@@ -694,20 +801,22 @@ fun ChatScreen(
                 LocalChatRooms.add(0, newGroup)
                 try {
                     val db = FirebaseFirestore.getInstance()
-                    db.collection("chats").document(newGroup.id).set(
-                        mapOf(
-                            "name" to newGroup.name,
-                            "isGroup" to true,
-                            "statusOrMembers" to newGroup.statusOrMembers,
-                            "lastMessage" to newGroup.lastMessage,
-                            "dateLabel" to newGroup.dateLabel,
-                            "participantIds" to newGroup.participantIds,
-                            "participantNames" to newGroup.participantNames,
-                            "updatedAt" to FieldValue.serverTimestamp(),
+                    db.collection(FIRESTORE_CHATS_COLLECTION).document(newGroup.id).set(
+                        buildChatRoomFirestorePayload(
+                            roomName = newGroup.name,
+                            isGroup = true,
+                            statusOrMembers = newGroup.statusOrMembers,
+                            lastMessage = newGroup.lastMessage,
+                            dateLabel = newGroup.dateLabel,
+                            participantIds = newGroup.participantIds,
+                            participantNames = newGroup.participantNames,
                         ),
                         SetOptions.merge(),
-                    )
-                } catch (_: Exception) {
+                    ).addOnFailureListener { err ->
+                        android.util.Log.e("ChatScreen", "Gagal membuat grup di Firestore: ${err.message}", err)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatScreen", "Exception saat membuat grup: ${e.message}", e)
                 }
                 showCreateGroupDialog = false
                 selectedTab = ChatTab.KOMUNITAS
@@ -953,24 +1062,36 @@ private fun ChatDetailContent(
     var remoteMessages by remember(room.id) { mutableStateOf<List<ChatMessageUiModel>>(emptyList()) }
 
     if (!isPreview) {
-        DisposableEffect(room.id) {
+        DisposableEffect(room.id, currentUserId) {
             var listener: ListenerRegistration? = null
             try {
                 listener = FirebaseFirestore.getInstance()
-                    .collection("chats")
+                    .collection(FIRESTORE_CHATS_COLLECTION)
                     .document(room.id)
-                    .collection("messages")
+                    .collection(FIRESTORE_CHAT_MESSAGES_SUBCOLLECTION)
                     .orderBy("createdAt", Query.Direction.ASCENDING)
-                    .limit(100)
+                    .limitToLast(100)
                     .addSnapshotListener { snap, error ->
-                        if (error == null && snap != null) {
+                        if (error != null) {
+                            android.util.Log.e(
+                                "ChatScreen",
+                                "Gagal membaca pesan chat (roomId=${room.id}): ${error.message}",
+                                error,
+                            )
+                            return@addSnapshotListener
+                        }
+                        if (snap != null) {
                             val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
                             remoteMessages = snap.documents.mapNotNull { doc ->
                                 val senderId = doc.getString("senderId").orEmpty()
                                 val senderName = doc.getString("senderName") ?: "Teman"
                                 val text = doc.getString("text") ?: ""
                                 val venueInvite = parseVenueInviteMap(doc.get("venueInvite"))
-                                val ts = doc.getTimestamp("createdAt")?.toDate()
+                                    ?: parseVenueInviteFromFallbackText(text)
+                                val ts = doc.getTimestamp(
+                                    "createdAt",
+                                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+                                )?.toDate()
                                 val timeStr = doc.getString("timeText")
                                     ?: ts?.let { fmt.format(it) }
                                     ?: "Baru"
@@ -987,7 +1108,12 @@ private fun ChatDetailContent(
                             }
                         }
                     }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.e(
+                    "ChatScreen",
+                    "Exception saat mendengarkan pesan chat (roomId=${room.id}): ${e.message}",
+                    e,
+                )
             }
             onDispose { listener?.remove() }
         }
@@ -999,9 +1125,10 @@ private fun ChatDetailContent(
         LocalChatMessages[room.id].orEmpty()
     }
     val messages = remember(localMessages, remoteMessages) {
-        (remoteMessages + localMessages)
-            .distinctBy { it.id }
-            .sortedBy { it.createdAtMillis }
+        mergeChatMessages(
+            remoteMessages = remoteMessages,
+            localMessages = localMessages,
+        )
     }
 
     val sendMessage: () -> Unit = {
@@ -1037,33 +1164,31 @@ private fun ChatDetailContent(
             if (!isPreview) {
                 try {
                     val db = FirebaseFirestore.getInstance()
-                    val chatRef = db.collection("chats").document(room.id)
+                    val chatRef = db.collection(FIRESTORE_CHATS_COLLECTION).document(room.id)
                     val participantIds = (room.participantIds + currentUserId).filter { it.isNotBlank() }.distinct()
                     val participantNames = (room.participantNames + currentUserName + room.name)
                         .filter { it.isNotBlank() && !it.equals("Anda", ignoreCase = true) }
                         .distinct()
                     chatRef.set(
-                        mapOf(
-                            "name" to room.name,
-                            "isGroup" to room.isGroup,
-                            "statusOrMembers" to room.statusOrMembers,
-                            "lastMessage" to updatedPreview,
-                            "dateLabel" to dateNow,
-                            "participantIds" to participantIds,
-                            "participantNames" to participantNames,
-                            "updatedAt" to FieldValue.serverTimestamp(),
+                        buildChatRoomFirestorePayload(
+                            roomName = room.name,
+                            isGroup = room.isGroup,
+                            statusOrMembers = room.statusOrMembers,
+                            lastMessage = updatedPreview,
+                            dateLabel = dateNow,
+                            participantIds = participantIds,
+                            participantNames = participantNames,
                         ),
                         SetOptions.merge(),
                     ).addOnFailureListener { err ->
                         android.util.Log.e("ChatScreen", "Gagal menyimpan chat ke Firestore: ${err.message}", err)
                     }
-                    chatRef.collection("messages").document(msgId).set(
-                        mapOf(
-                            "senderId" to currentUserId,
-                            "senderName" to currentUserName,
-                            "text" to trimmed,
-                            "timeText" to timeNow,
-                            "createdAt" to FieldValue.serverTimestamp(),
+                    chatRef.collection(FIRESTORE_CHAT_MESSAGES_SUBCOLLECTION).document(msgId).set(
+                        buildChatMessageFirestorePayload(
+                            senderId = currentUserId,
+                            senderName = currentUserName,
+                            text = trimmed,
+                            timeText = timeNow,
                         ),
                     ).addOnFailureListener { err ->
                         android.util.Log.e("ChatScreen", "Gagal mengirim pesan ke Firestore: ${err.message}", err)
