@@ -307,6 +307,227 @@ class VenueFinderLogicTest {
         assertTrue(filterVenues(venues, "renovasi").isEmpty())
     }
 
+    @Test
+    fun filterVenues_sportFilterMatchesCaseInsensitiveAndCommonSynonyms() {
+        val venues = listOf(
+            sampleVenue(id = "fb_id", name = "Arena 1", sportCategory = "Sepak Bola"),
+            sampleVenue(id = "fb_futsal", name = "Arena 2", sportCategory = "FUTSAL Indoor"),
+            sampleVenue(id = "fb_en", name = "Arena 3", sportCategory = "Mini Football"),
+            sampleVenue(id = "bd_en", name = "Arena 4", sportCategory = "Badminton"),
+            sampleVenue(id = "bd_id", name = "Arena 5", sportCategory = "Bulu Tangkis"),
+            sampleVenue(id = "gym_1", name = "Arena 6", sportCategory = "GYM"),
+            sampleVenue(id = "gym_fit", name = "Arena 7", sportCategory = "Fitness Center"),
+            sampleVenue(id = "ten_en", name = "Arena 8", sportCategory = "Tennis Court"),
+            sampleVenue(id = "ten_id", name = "Arena 9", sportCategory = "Tenis Lapangan"),
+            sampleVenue(id = "bsk_id", name = "Arena 10", sportCategory = "Basket"),
+            sampleVenue(id = "bsk_en", name = "Arena 11", sportCategory = "Basketball"),
+            sampleVenue(id = "jog_1", name = "Arena 12", sportCategory = "Jogging"),
+            sampleVenue(id = "jog_lari", name = "Arena 13", sportCategory = "Lari & Atletik"),
+            sampleVenue(id = "jog_run", name = "Arena 14", sportCategory = "Running Track"),
+            sampleVenue(id = "generic_futsal", name = "Lapangan Futsal Kampus", sportCategory = "Olahraga"),
+            sampleVenue(id = "false_pos", name = "Arena 15", sportCategory = "Popularitas Club"),
+            sampleVenue(id = "inactive_gym", name = "Gym Tutup", sportCategory = "Fitness", isActive = false),
+        )
+
+        assertEquals(
+            16,
+            filterVenues(venues, sportFilter = VenueSportFilter.ALL).size,
+        )
+        assertEquals(
+            listOf("fb_id", "fb_futsal", "fb_en", "generic_futsal"),
+            filterVenues(venues, sportFilter = VenueSportFilter.FOOTBALL).map { it.id },
+        )
+        assertEquals(
+            listOf("bd_en", "bd_id"),
+            filterVenues(venues, sportFilter = VenueSportFilter.BADMINTON).map { it.id },
+        )
+        assertEquals(
+            listOf("gym_1", "gym_fit"),
+            filterVenues(venues, sportFilter = VenueSportFilter.GYM).map { it.id },
+        )
+        assertEquals(
+            listOf("ten_en", "ten_id"),
+            filterVenues(venues, sportFilter = VenueSportFilter.TENNIS).map { it.id },
+        )
+        assertEquals(
+            listOf("bsk_id", "bsk_en"),
+            filterVenues(venues, sportFilter = VenueSportFilter.BASKETBALL).map { it.id },
+        )
+        assertEquals(
+            listOf("jog_1", "jog_lari", "jog_run"),
+            filterVenues(venues, sportFilter = VenueSportFilter.JOGGING).map { it.id },
+        )
+        // Pastikan substring "lari" di dalam "Popularitas" tidak memicu false positive
+        assertFalse(
+            matchesSportFilter(
+                venues.first { it.id == "false_pos" },
+                VenueSportFilter.JOGGING,
+            ),
+        )
+    }
+
+    @Test
+    fun filterVenues_radiusFilterAppliesHaversineThresholdsAndFallbackLocation() {
+        // 1 derajat lintang ~= 111.195 meter -> 0,009 derajat ~= 1.000 meter
+        val origin = DefaultUsuCoordinate
+        val v500m = sampleVenue(
+            id = "r_500m",
+            name = "Venue 500m",
+            latitude = origin.latitude + 0.0045,
+            longitude = origin.longitude,
+        )
+        val v2km = sampleVenue(
+            id = "r_2km",
+            name = "Venue 2km",
+            latitude = origin.latitude + 0.018,
+            longitude = origin.longitude,
+        )
+        val v4km = sampleVenue(
+            id = "r_4km",
+            name = "Venue 4km",
+            latitude = origin.latitude + 0.036,
+            longitude = origin.longitude,
+        )
+        val v8km = sampleVenue(
+            id = "r_8km",
+            name = "Venue 8km",
+            latitude = origin.latitude + 0.072,
+            longitude = origin.longitude,
+        )
+        val v12km = sampleVenue(
+            id = "r_12km",
+            name = "Venue 12km",
+            latitude = origin.latitude + 0.108,
+            longitude = origin.longitude,
+        )
+        val venues = listOf(v500m, v2km, v4km, v8km, v12km)
+
+        assertEquals(
+            listOf("r_500m"),
+            filterVenues(venues, radiusFilter = VenueRadiusFilter.KM_1, userLocation = origin).map { it.id },
+        )
+        assertEquals(
+            listOf("r_500m", "r_2km"),
+            filterVenues(venues, radiusFilter = VenueRadiusFilter.KM_3, userLocation = origin).map { it.id },
+        )
+        assertEquals(
+            listOf("r_500m", "r_2km", "r_4km"),
+            filterVenues(venues, radiusFilter = VenueRadiusFilter.KM_5, userLocation = origin).map { it.id },
+        )
+        assertEquals(
+            listOf("r_500m", "r_2km", "r_4km", "r_8km"),
+            filterVenues(venues, radiusFilter = VenueRadiusFilter.KM_10, userLocation = origin).map { it.id },
+        )
+        assertEquals(
+            listOf("r_500m", "r_2km", "r_4km", "r_8km", "r_12km"),
+            filterVenues(venues, radiusFilter = VenueRadiusFilter.ALL, userLocation = origin).map { it.id },
+        )
+
+        // Lokasi pengguna aktif di dekat v12km -> hanya v12km yang masuk radius 1 km
+        val nearV12km = GeoCoordinate(v12km.latitude, v12km.longitude)
+        assertEquals(
+            listOf("r_12km"),
+            filterVenues(venues, radiusFilter = VenueRadiusFilter.KM_1, userLocation = nearV12km).map { it.id },
+        )
+
+        // Lokasi pengguna null / tidak valid -> fallback otomatis ke DefaultUsuCoordinate (USU Medan)
+        assertEquals(
+            listOf("r_500m", "r_2km"),
+            filterVenues(venues, radiusFilter = VenueRadiusFilter.KM_3, userLocation = null).map { it.id },
+        )
+        assertEquals(
+            listOf("r_500m", "r_2km"),
+            filterVenues(
+                venues,
+                radiusFilter = VenueRadiusFilter.KM_3,
+                userLocation = GeoCoordinate(0.0, 0.0),
+            ).map { it.id },
+        )
+    }
+
+    @Test
+    fun filterVenues_combinesTextSportAndRadiusWithAndLogic() {
+        val origin = DefaultUsuCoordinate
+        val venues = listOf(
+            // Cocok semua: teks "padang", olahraga Sepak Bola (sinonim Futsal), jarak ~500m (<= 3 km)
+            sampleVenue(
+                id = "match_all",
+                name = "Futsal Padang Bulan",
+                sportCategory = "Futsal",
+                address = "Jl. Dr. Mansyur, Padang Bulan",
+                latitude = origin.latitude + 0.0045,
+                longitude = origin.longitude,
+            ),
+            // Gagal di radius (~6 km > 3 km)
+            sampleVenue(
+                id = "too_far",
+                name = "Padang Futsal Center",
+                sportCategory = "Sepak Bola",
+                address = "Padang Bulan Utara",
+                latitude = origin.latitude + 0.055,
+                longitude = origin.longitude,
+            ),
+            // Gagal di jenis olahraga (Basket, bukan Sepak Bola)
+            sampleVenue(
+                id = "wrong_sport",
+                name = "GOR Padang Bulan",
+                sportCategory = "Basket",
+                address = "Padang Bulan",
+                latitude = origin.latitude + 0.004,
+                longitude = origin.longitude,
+            ),
+            // Gagal di teks pencarian (tidak memuat "padang")
+            sampleVenue(
+                id = "wrong_text",
+                name = "BolaKuy Arena",
+                sportCategory = "Football",
+                address = "Jl. Setia Budi",
+                latitude = origin.latitude + 0.003,
+                longitude = origin.longitude,
+            ),
+            // Gagal di isActive
+            sampleVenue(
+                id = "inactive_match",
+                name = "Futsal Padang Lama",
+                sportCategory = "Futsal",
+                address = "Padang Bulan",
+                latitude = origin.latitude + 0.002,
+                longitude = origin.longitude,
+                isActive = false,
+            ),
+        )
+
+        val result = filterVenues(
+            venues = venues,
+            query = "padang",
+            sportFilter = VenueSportFilter.FOOTBALL,
+            radiusFilter = VenueRadiusFilter.KM_3,
+            userLocation = origin,
+        )
+
+        assertEquals(listOf("match_all"), result.map { it.id })
+
+        // Jika radius diperlonggar ke 10 km, venue "too_far" ikut masuk
+        val widerRadius = filterVenues(
+            venues = venues,
+            query = "padang",
+            sportFilter = VenueSportFilter.FOOTBALL,
+            radiusFilter = VenueRadiusFilter.KM_10,
+            userLocation = origin,
+        )
+        assertEquals(listOf("match_all", "too_far"), widerRadius.map { it.id })
+
+        // Jika olahraga diatur ke Semua dan radius 3 km, "wrong_sport" ikut masuk
+        val allSports = filterVenues(
+            venues = venues,
+            query = "padang",
+            sportFilter = VenueSportFilter.ALL,
+            radiusFilter = VenueRadiusFilter.KM_3,
+            userLocation = origin,
+        )
+        assertEquals(listOf("match_all", "wrong_sport"), allSports.map { it.id })
+    }
+
     // -------------------------------------------------------------------------
     // Parser Firestore Defensif (Double vs GeoPoint, Fallback & Field Opsional)
     // -------------------------------------------------------------------------
@@ -760,6 +981,8 @@ class VenueFinderLogicTest {
         sportCategory: String = "Olahraga",
         address: String = "",
         shortDescription: String = "",
+        latitude: Double = DefaultUsuCoordinate.latitude,
+        longitude: Double = DefaultUsuCoordinate.longitude,
         isActive: Boolean = true,
     ): VenueUiModel = VenueUiModel(
         id = id,
@@ -768,8 +991,8 @@ class VenueFinderLogicTest {
         shortDescription = shortDescription,
         description = shortDescription,
         imageUrl = "",
-        latitude = 3.5625,
-        longitude = 98.6567,
+        latitude = latitude,
+        longitude = longitude,
         address = address,
         isActive = isActive,
     )

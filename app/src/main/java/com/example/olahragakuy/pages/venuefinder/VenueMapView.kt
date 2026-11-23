@@ -34,6 +34,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,6 +108,7 @@ fun VenueMapView(
     modifier: Modifier = Modifier,
     userName: String = "Kamu",
     userPhotoUrl: String? = null,
+    initialUserCenterCoordinate: GeoCoordinate? = null,
 ) {
     if (LocalInspectionMode.current) {
         VenueMapInspectionPlaceholder(
@@ -175,9 +177,14 @@ fun VenueMapView(
         mapView.invalidate()
     }
 
+    val hasAutoCenteredOnUser = remember(mapView) { mutableStateOf(false) }
+
     // Auto-focus kamera ke rute (mode rute) atau ke venue terpilih.
     val routePaddingPx = with(density) { RouteFocusPadding.roundToPx() }
     LaunchedEffect(mapView, showRoute, routeInfo, selectedVenue?.id) {
+        if (showRoute || selectedVenue != null) {
+            hasAutoCenteredOnUser.value = true
+        }
         mapView.runWhenLaidOut {
             when {
                 showRoute && routeInfo != null -> {
@@ -194,10 +201,12 @@ fun VenueMapView(
         }
     }
 
-    // Ikuti pembaruan GPS hanya saat pengguna belum memilih venue/rute.
-    LaunchedEffect(mapView, userLocation) {
-        if (selectedVenue == null && !showRoute) {
-            mapView.runWhenLaidOut { mapView.controller.animateTo(userLocation.toGeoPoint()) }
+    // Auto-center ke lokasi user hanya sekali saat pertama buka tab Lokasi tanpa target venue/rute.
+    LaunchedEffect(mapView, initialUserCenterCoordinate) {
+        val target = initialUserCenterCoordinate ?: return@LaunchedEffect
+        if (!hasAutoCenteredOnUser.value && selectedVenue == null && !showRoute) {
+            hasAutoCenteredOnUser.value = true
+            mapView.runWhenLaidOut { mapView.controller.animateTo(target.toGeoPoint()) }
         }
     }
 
@@ -539,31 +548,15 @@ private fun MapView.runWhenLaidOut(action: () -> Unit) {
 }
 
 private const val OsmdroidUserAgent = "OlahragaKuy/1.0 (Android; Medan)"
+private const val OsmdroidCacheDirName = "osmdroid_osm_v2"
 
 private fun configureOsmdroid(context: Context) {
     val config = Configuration.getInstance()
     config.userAgentValue = OsmdroidUserAgent
-    val basePath = File(context.cacheDir, "osmdroid_osm_v2").apply { mkdirs() }
+    val basePath = File(context.cacheDir, OsmdroidCacheDirName).apply { mkdirs() }
     config.osmdroidBasePath = basePath
     config.osmdroidTileCache = File(config.osmdroidBasePath, "tiles").apply { mkdirs() }
     config.tileDownloadThreads = 2
-}
-
-private fun createDarkNavyColorFilter(): ColorMatrixColorFilter {
-    val matrix = ColorMatrix().apply {
-        setSaturation(0.25f)
-        postConcat(
-            ColorMatrix(
-                floatArrayOf(
-                    -0.80f, 0f, 0f, 0f, 205f,
-                    0f, -0.80f, 0f, 0f, 221f,
-                    0f, 0f, -0.80f, 0f, 239f,
-                    0f, 0f, 0f, 1f, 0f,
-                ),
-            ),
-        )
-    }
-    return ColorMatrixColorFilter(matrix)
 }
 
 private fun createDarkMapView(context: Context, center: GeoCoordinate): TrackingMapView =
@@ -583,6 +576,53 @@ private fun createDarkMapView(context: Context, center: GeoCoordinate): Tracking
         controller.setZoom(DefaultMapZoom)
         controller.setCenter(center.toGeoPoint())
     }
+
+/**
+ * Filter warna minimalis bertema dark navy untuk tile standar OpenStreetMap Mapnik.
+ * Menenggelamkan warna latar tanah dan blok bangunan pucat ke nuansa dark navy,
+ * sambil mempertahankan kontras jalan utama, sungai/taman, dan label nama jalan.
+ */
+private fun createDarkNavyColorFilter(): ColorMatrixColorFilter {
+    // 1. Inversi warna dasar tile terang Mapnik.
+    val matrix = ColorMatrix(
+        floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f,
+        ),
+    )
+
+    // 2. Rotasi hue 180 derajat agar perairan tetap biru, taman hijau, dan jalan utama hangat.
+    matrix.postConcat(
+        ColorMatrix(
+            floatArrayOf(
+                -0.574f, 1.430f, 0.144f, 0f, 0f,
+                0.426f, 0.430f, 0.144f, 0f, 0f,
+                0.426f, 1.430f, -0.856f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+    )
+
+    // 3. Redam saturasi agar tampilan peta lebih tenang dan fokus pada jalur utama.
+    matrix.postConcat(ColorMatrix().apply { setSaturation(0.68f) })
+
+    // 4. Kurva kontras & offset dark navy: tekan area terang pucat (tanah/bangunan) ke gelap,
+    //    tetapi pertahankan keterbacaan garis jalan utama dan label teks.
+    matrix.postConcat(
+        ColorMatrix(
+            floatArrayOf(
+                1.32f, 0f, 0f, 0f, -36f,
+                0f, 1.34f, 0f, 0f, -14f,
+                0f, 0f, 1.36f, 0f, 16f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+    )
+
+    return ColorMatrixColorFilter(matrix)
+}
 
 private fun createRoutePolyline(mapView: MapView, color: Color, widthPx: Float): Polyline =
     Polyline(mapView).apply {

@@ -648,6 +648,7 @@ fun ChatScreen(
     initialSelectedRoomId: String? = null,
     initialDirectRoom: ChatRoomUiModel? = null,
     exitOnDetailBack: Boolean = false,
+    returnDirectlyOnBack: Boolean = false,
     onOpenVenueFinder: ((String) -> Unit)? = null,
 ) {
     val isPreview = LocalInspectionMode.current
@@ -833,12 +834,14 @@ fun ChatScreen(
             ?: initialDirectRoom?.takeIf { it.id == selectedRoomId }
     }
 
+    val shouldReturnDirectlyOnBack = exitOnDetailBack || returnDirectlyOnBack
+
     val handleDetailBack: () -> Unit = {
-        if (exitOnDetailBack) onBack() else selectedRoomId = null
+        if (shouldReturnDirectlyOnBack) onBack() else selectedRoomId = null
     }
 
-    BackHandler(enabled = selectedRoomId != null && !exitOnDetailBack) {
-        selectedRoomId = null
+    BackHandler(enabled = selectedRoomId != null) {
+        handleDetailBack()
     }
 
     if (activeRoom != null) {
