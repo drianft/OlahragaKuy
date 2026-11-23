@@ -1,5 +1,22 @@
 package com.example.olahragakuy.pages.venuefinder
 
+import com.example.olahragakuy.pages.posts.CHAT_COLLECTION
+import com.example.olahragakuy.pages.posts.CHAT_MESSAGES_SUBCOLLECTION
+import com.example.olahragakuy.pages.posts.ChatMessageUiModel
+import com.example.olahragakuy.pages.posts.ChatRoomUiModel
+import com.example.olahragakuy.pages.posts.FollowingFriend
+import com.example.olahragakuy.pages.posts.LocalChatMessages
+import com.example.olahragakuy.pages.posts.LocalChatRooms
+import com.example.olahragakuy.pages.posts.VenueInviteUiModel
+import com.example.olahragakuy.pages.posts.buildChatMessageFirestorePayload
+import com.example.olahragakuy.pages.posts.buildChatRoomFirestorePayload
+import com.example.olahragakuy.pages.posts.buildVenueInvitePayload
+import com.example.olahragakuy.pages.posts.canonicalChatRoomId
+import com.example.olahragakuy.pages.posts.directChatRoomId
+import com.example.olahragakuy.pages.posts.isValidChatUserUid
+import com.example.olahragakuy.pages.posts.mergeChatMessages
+import com.example.olahragakuy.pages.posts.parseVenueInvitePayload
+import com.example.olahragakuy.pages.posts.sanitizeChatParticipantIds
 import com.google.firebase.firestore.GeoPoint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -421,6 +438,320 @@ class VenueFinderLogicTest {
         assertNull(parseVenueInviteMap("bukan map"))
         assertNull(parseVenueInviteMap(emptyMap<String, Any>()))
         assertNull(parseVenueInviteMap(mapOf("title" to "   ", "sport" to "Basket")))
+    }
+
+    // -------------------------------------------------------------------------
+    // Sinkronisasi ChatScreen <-> VenueChatBridge <-> VenueRepository
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun chatAndVenueBridgePayloads_alignWithCanonicalSchemaAndFirestoreRules() {
+        assertEquals("chats", CHAT_COLLECTION)
+        assertEquals("messages", CHAT_MESSAGES_SUBCOLLECTION)
+
+        val allowedRoomKeys = setOf(
+            "name", "isGroup", "statusOrMembers", "lastMessage",
+            "dateLabel", "participantIds", "participantNames", "updatedAt",
+        )
+        val allowedMessageKeys = setOf(
+            "senderId", "senderName", "text", "timeText", "venueInvite", "createdAt",
+        )
+
+        val roomPayload = buildChatRoomFirestorePayload(
+            name = "Monster Basket",
+            isGroup = false,
+            statusOrMembers = "Aktif",
+            lastMessage = "Anda mengirim ajakan olahraga bersama",
+            dateLabel = "23/11",
+            participantIds = listOf("uid_alice", "uid_bob", "dm_uid_alice_uid_bob", "group_gym", "author_x", "me"),
+            participantNames = listOf("Anda", "Alice", "Monster Basket"),
+            updatedAt = "SERVER_TS",
+        )
+        assertTrue(roomPayload.keys.all { it in allowedRoomKeys })
+        assertEquals(listOf("uid_alice", "uid_bob"), roomPayload["participantIds"])
+        assertEquals(listOf("Alice", "Monster Basket"), roomPayload["participantNames"])
+
+        val plainMsgPayload = buildChatMessageFirestorePayload(
+            senderId = "uid_alice",
+            senderName = "Alice",
+            text = "Halo!",
+            timeText = "10:15",
+            createdAt = "SERVER_TS",
+        )
+        assertEquals(
+            setOf("senderId", "senderName", "text", "timeText", "createdAt"),
+            plainMsgPayload.keys,
+        )
+        assertFalse("venueInvite" in plainMsgPayload)
+
+        val venue = DefaultUsuVenues.first { it.id == "venue_gor_cikal_usu" }
+        val expectedInviteMap = buildVenueInvitePayload(
+            venueId = venue.id,
+            title = venue.name,
+            sport = venue.sportCategory,
+            description = buildShortDescription(venue.shortDescription, venue.description),
+            imageUrl = venue.imageUrl,
+            latitude = venue.latitude,
+            longitude = venue.longitude,
+        )
+        val chatScreenInvitePayload = buildChatMessageFirestorePayload(
+            senderId = "uid_alice",
+            senderName = "Alice",
+            text = buildVenueInviteFallbackText(venue),
+            timeText = "10:20",
+            venueInvite = expectedInviteMap,
+            createdAt = "SERVER_TS",
+        )
+        val bridgeInvitePayload = buildVenueInviteFirestorePayload(
+            senderId = "uid_alice",
+            senderName = "Alice",
+            fallbackText = buildVenueInviteFallbackText(venue),
+            timeText = "10:20",
+            venue = venue,
+            createdAt = "SERVER_TS",
+        )
+
+        assertEquals(chatScreenInvitePayload, bridgeInvitePayload)
+        assertEquals(allowedMessageKeys, bridgeInvitePayload.keys)
+
+        val parsedInvite = parseVenueInvitePayload(bridgeInvitePayload["venueInvite"])
+        assertNotNull(parsedInvite)
+        assertEquals(venue.name, parsedInvite?.title)
+        assertEquals(venue.sportCategory, parsedInvite?.sport)
+        assertEquals(
+            buildShortDescription(venue.shortDescription, venue.description),
+            parsedInvite?.description,
+        )
+    }
+
+    @Test
+    fun uidValidationAndCanonicalRoomId_rejectFakeIdsAndNormalizeDirectRooms() {
+        assertTrue(isValidChatUserUid("uid_alice_123"))
+        assertTrue(isValidChatUserUid("user_monster_basket"))
+
+        assertFalse(isValidChatUserUid(null))
+        assertFalse(isValidChatUserUid(""))
+        assertFalse(isValidChatUserUid("   "))
+        assertFalse(isValidChatUserUid("me"))
+        assertFalse(isValidChatUserUid("anon"))
+        assertFalse(isValidChatUserUid("dm_uidA_uidB"))
+        assertFalse(isValidChatUserUid("group_gymclub"))
+        assertFalse(isValidChatUserUid("author_monster"))
+        assertFalse(isValidChatUserUid("Monster Basket"))
+        assertFalse(isValidChatUserUid("users/uid_alice"))
+
+        assertEquals(
+            listOf("uid_alice", "uid_bob"),
+            sanitizeChatParticipantIds(
+                listOf("uid_alice", "dm_uid_alice_uid_bob", "group_1", "author_bob", "me", "uid_bob", "uid_alice"),
+            ),
+        )
+
+        assertEquals(
+            directChatRoomId("uid_alice", "uid_bob"),
+            directChatRoomId("uid_bob", "uid_alice"),
+        )
+        assertEquals(
+            "dm_uid_alice_uid_bob",
+            canonicalChatRoomId(
+                isGroup = false,
+                currentUserId = "uid_bob",
+                targetId = "uid_alice",
+                existingRoomId = "dm_legacy_id",
+            ),
+        )
+        assertEquals(
+            "group_gymclub",
+            canonicalChatRoomId(
+                isGroup = true,
+                currentUserId = "uid_bob",
+                targetId = "group_gymclub",
+                existingRoomId = "group_gymclub",
+            ),
+        )
+    }
+
+    @Test
+    fun mergeShareRecipients_usesCanonicalUserUidsAndNeverFallsBackToRoomOrAuthorIds() {
+        val currentUid = "uid_me_100"
+        val canonicalUsers = listOf(
+            FollowingFriend(uid = "uid_monster_200", displayName = "Monster Basket", photoUrl = "https://img/m.png"),
+            FollowingFriend(uid = "uid_citra_300", displayName = "Citra"),
+        )
+        val friendsFromMixedSources = listOf(
+            FollowingFriend(uid = "author_budi", displayName = "Budi"),
+            FollowingFriend(uid = "author_monster", displayName = "Monster Basket"),
+            FollowingFriend(uid = "dm_corrupt_room", displayName = "Room Palsu"),
+        )
+        val chatRooms = listOf(
+            // Room DM lama tanpa participantIds -> harus teresolusi ke UID kanonis dari koleksi `users`
+            ChatRoomUiModel(
+                id = "dm_monster",
+                name = "Monster Basket",
+                isGroup = false,
+                statusOrMembers = "Aktif",
+                lastMessage = "Halo",
+                dateLabel = "23/11",
+                participantIds = listOf("dm_monster"),
+                participantNames = listOf("Monster Basket"),
+            ),
+            // Room DM tanpa UID valid di mana pun -> wajib dibuang, jangan fallback ke room.id/nama
+            ChatRoomUiModel(
+                id = "dm_tanpa_uid",
+                name = "Akun Hantu",
+                isGroup = false,
+                statusOrMembers = "Aktif",
+                lastMessage = "Tes",
+                dateLabel = "23/11",
+                participantIds = emptyList(),
+                participantNames = listOf("Akun Hantu"),
+            ),
+            // Room grup -> tetap dipertahankan dengan ID dokumen grup
+            ChatRoomUiModel(
+                id = "group_gymclub",
+                name = "GymClub",
+                isGroup = true,
+                statusOrMembers = "Anda,Monster Basket",
+                lastMessage = "Yuk gym",
+                dateLabel = "23/11",
+                participantIds = listOf(currentUid, "uid_monster_200", "group_gymclub"),
+                participantNames = listOf("Saya", "Monster Basket"),
+            ),
+        )
+
+        val recipients = mergeShareRecipients(
+            chatRooms = chatRooms,
+            friends = friendsFromMixedSources,
+            currentUserId = currentUid,
+            currentUserName = "Saya",
+            canonicalUsers = canonicalUsers,
+        )
+
+        val monster = recipients.firstOrNull { !it.isGroup && it.name == "Monster Basket" }
+        assertNotNull(monster)
+        requireNotNull(monster)
+        assertEquals("uid_monster_200", monster.id)
+        assertEquals(directChatRoomId(currentUid, "uid_monster_200"), monster.roomId)
+        assertEquals(listOf(currentUid, "uid_monster_200"), monster.participantIds)
+
+        val citra = recipients.firstOrNull { !it.isGroup && it.name == "Citra" }
+        assertNotNull(citra)
+        requireNotNull(citra)
+        assertEquals("uid_citra_300", citra.id)
+        assertEquals(directChatRoomId(currentUid, "uid_citra_300"), citra.roomId)
+
+        val group = recipients.firstOrNull { it.isGroup && it.name == "GymClub" }
+        assertNotNull(group)
+        requireNotNull(group)
+        assertEquals("group_gymclub", group.id)
+        assertEquals("group_gymclub", group.roomId)
+        assertEquals(listOf(currentUid, "uid_monster_200"), group.participantIds)
+
+        assertFalse(recipients.any { it.name == "Budi" || it.id.startsWith("author_") })
+        assertFalse(recipients.any { it.name == "Akun Hantu" || it.id == "dm_tanpa_uid" })
+        assertFalse(recipients.any { it.name == "Room Palsu" })
+    }
+
+    @Test
+    fun sendVenueInvite_normalizesDirectRoomIdAndSanitizesParticipantIds() {
+        val venue = DefaultUsuVenues.first { it.id == "venue_gor_cikal_usu" }
+        val recipient = ShareRecipient(
+            id = "uid_bob_99",
+            name = "Bob",
+            isGroup = false,
+            roomId = "dm_legacy_wrong",
+            participantIds = listOf("dm_legacy_wrong", "group_noise", "uid_bob_99"),
+            participantNames = listOf("Bob"),
+        )
+        val expectedRoomId = directChatRoomId("uid_alice_11", "uid_bob_99")
+
+        try {
+            val target = VenueChatBridge.sendVenueInvite(
+                venue = venue,
+                recipient = recipient,
+                currentUserId = "uid_alice_11",
+                currentUserName = "Alice",
+                syncToFirestore = false,
+                nowMillis = 1_700_000_000_000L,
+            )
+
+            assertEquals(expectedRoomId, target.roomId)
+            assertEquals("uid_bob_99", target.recipientId)
+            assertEquals(listOf("uid_alice_11", "uid_bob_99"), target.room.participantIds)
+            assertTrue(target.room.participantIds.none { it.startsWith("dm_") || it.startsWith("group_") })
+
+            val savedMsg = LocalChatMessages[expectedRoomId]?.firstOrNull { it.id == target.messageId }
+            assertNotNull(savedMsg)
+            assertEquals(venue.name, savedMsg?.venueInvite?.title)
+            assertEquals("uid_alice_11", savedMsg?.senderId)
+        } finally {
+            LocalChatRooms.removeAll { it.id == expectedRoomId }
+            LocalChatMessages.remove(expectedRoomId)
+            VenueChatBridge.consumePendingTarget()
+        }
+    }
+
+    @Test
+    fun mergeChatMessages_preservesVenueInviteAcrossLocalAndRemoteSync() {
+        val invite = VenueInviteUiModel(
+            title = "GOR Cikal USU",
+            sport = "Basket",
+            description = "Lapangan basket kampus USU",
+        )
+        val localMessages = listOf(
+            ChatMessageUiModel(
+                id = "venue_invite_1",
+                senderId = "uid_alice",
+                senderName = "Alice",
+                text = "Yuk olahraga bareng di GOR Cikal USU (Basket)!",
+                timeText = "10:20",
+                isFromMe = true,
+                venueInvite = invite,
+                createdAtMillis = 2_000L,
+            ),
+            ChatMessageUiModel(
+                id = "local_only_2",
+                senderId = "uid_alice",
+                senderName = "Alice",
+                text = "Aku otw ya",
+                timeText = "10:21",
+                isFromMe = true,
+                createdAtMillis = 3_000L,
+            ),
+        )
+        val remoteMessages = listOf(
+            ChatMessageUiModel(
+                id = "remote_older_0",
+                senderId = "uid_bob",
+                senderName = "Bob",
+                text = "Mau main di mana?",
+                timeText = "10:19",
+                isFromMe = false,
+                createdAtMillis = 1_000L,
+            ),
+            // Simulasi snapshot remote dengan ID sama namun field venueInvite null
+            ChatMessageUiModel(
+                id = "venue_invite_1",
+                senderId = "uid_alice",
+                senderName = "Alice",
+                text = "Yuk olahraga bareng di GOR Cikal USU (Basket)!",
+                timeText = "10:20",
+                isFromMe = true,
+                venueInvite = null,
+                createdAtMillis = 2_050L,
+            ),
+        )
+
+        val merged = mergeChatMessages(
+            localMessages = localMessages,
+            remoteMessages = remoteMessages,
+        )
+
+        assertEquals(listOf("remote_older_0", "venue_invite_1", "local_only_2"), merged.map { it.id })
+        val mergedInviteMsg = merged.first { it.id == "venue_invite_1" }
+        assertEquals(invite, mergedInviteMsg.venueInvite)
+        assertEquals(2_050L, mergedInviteMsg.createdAtMillis)
+        assertTrue(mergedInviteMsg.isFromMe)
     }
 
     private fun sampleVenue(
