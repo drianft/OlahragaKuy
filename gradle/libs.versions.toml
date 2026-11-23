@@ -1,6 +1,6 @@
 [versions]
 screenshot = "0.0.1-alpha16"
-agp = "9.5.1"
+agp = "9.5.2"
 coreKtx = "1.10.1"
 coreSplashscreen = "1.2.0"
 junit = "4.13.2"
@@ -13,9 +13,13 @@ composeBom = "2026.02.01"
 navigationCompose = "2.10.2"
 material3 = "1.4.0"
 coil = "2.7.0"
+osmdroid = "6.1.20"
+playServicesLocation = "21.4.0"
 
 [libraries]
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
+play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 screenshot-validation-api = { group = "com.android.tools.screenshot", name = "screenshot-validation-api", version.ref = "screenshot" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashscreen" }
@@ -39,4 +43,3 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3",
 screenshot = { id = "com.android.compose.screenshot", version.ref = "screenshot" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-

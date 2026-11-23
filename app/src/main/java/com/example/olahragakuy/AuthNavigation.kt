@@ -23,7 +23,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.olahragakuy.pages.HomeScreen
-import com.example.olahragakuy.pages.InProgressTabScreen
 import com.example.olahragakuy.pages.LoginScreen
 import com.example.olahragakuy.pages.OpeningScreen
 import com.example.olahragakuy.pages.RegisterScreen
@@ -37,6 +36,8 @@ import com.example.olahragakuy.pages.posts.resolveDisplayName
 import com.example.olahragakuy.pages.profile.user.LoggedInProfileScreen
 import com.example.olahragakuy.pages.profile.user.OtherUserProfileScreen
 import com.example.olahragakuy.pages.training.TrainingHomeScreen
+import com.example.olahragakuy.pages.venuefinder.VenueChatBridge
+import com.example.olahragakuy.pages.venuefinder.VenueFinderScreen
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.theme.KuyNavy
 import com.google.firebase.auth.FirebaseAuth
@@ -142,6 +143,13 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
         val encodedUid = Uri.encode(targetUid.trim())
         val encodedName = Uri.encode(targetName.trim().ifEmpty { "Teman" })
         navController.navigate("chat_direct?userId=$encodedUid&name=$encodedName") {
+            launchSingleTop = true
+        }
+    }
+
+    val navigateToVenueFinder: (String) -> Unit = { venueName ->
+        val encodedVenueName = Uri.encode(venueName.trim())
+        navController.navigate("venue_finder?venueName=$encodedVenueName") {
             launchSingleTop = true
         }
     }
@@ -258,17 +266,35 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
             )
         }
         composable("lokasi") {
-            InProgressTabScreen(
-                selectedTab = HomeNavTab.LOKASI,
-                onTabSelected = navigateToTab,
-                onSearchClick = {
-                    navController.navigate("search_posts") { launchSingleTop = true }
+            VenueFinderScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navigateToTab(HomeNavTab.KOMUNITAS)
+                    }
                 },
-                onNotificationClick = {
-                    navController.navigate("notifications") { launchSingleTop = true }
+                onNavigateToChat = { target ->
+                    VenueChatBridge.setPendingTarget(target)
+                    navController.navigate("chat") {
+                        launchSingleTop = true
+                    }
                 },
-                onChatClick = {
-                    navController.navigate("chat") { launchSingleTop = true }
+            )
+        }
+        composable(
+            route = "venue_finder?venueName={venueName}",
+            arguments = listOf(
+                navArgument("venueName") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
+            val venueName = entry.arguments?.getString("venueName").orEmpty().ifBlank { null }
+            VenueFinderScreen(
+                onBack = { navController.popBackStack() },
+                initialFocusedVenueName = venueName,
+                onNavigateToChat = { target ->
+                    VenueChatBridge.setPendingTarget(target)
+                    navController.navigate("chat") {
+                        launchSingleTop = true
+                    }
                 },
             )
         }
@@ -316,6 +342,7 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
         composable("chat") {
             ChatScreen(
                 onBack = { navController.popBackStack() },
+                onOpenVenueFinder = navigateToVenueFinder,
             )
         }
         composable(
@@ -361,6 +388,7 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                 initialSelectedRoomId = directRoom.id,
                 initialDirectRoom = directRoom,
                 exitOnDetailBack = true,
+                onOpenVenueFinder = navigateToVenueFinder,
             )
         }
     }
