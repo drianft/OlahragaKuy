@@ -33,9 +33,11 @@ import com.example.olahragakuy.pages.posts.SearchPostScreen
 import com.example.olahragakuy.pages.posts.currentUserOrNull
 import com.example.olahragakuy.pages.posts.ensureDirectChatRoom
 import com.example.olahragakuy.pages.posts.resolveDisplayName
+import com.example.olahragakuy.pages.drinkreminder.DrinkReminderScreen
 import com.example.olahragakuy.pages.profile.user.LoggedInProfileScreen
 import com.example.olahragakuy.pages.profile.user.OtherUserProfileScreen
 import com.example.olahragakuy.pages.training.TrainingHomeScreen
+import com.example.olahragakuy.pages.training.TrainingRoutineType
 import com.example.olahragakuy.pages.venuefinder.VenueChatBridge
 import com.example.olahragakuy.pages.venuefinder.VenueFinderScreen
 import com.example.olahragakuy.ui.components.HomeNavTab
@@ -48,12 +50,37 @@ import com.google.firebase.firestore.FirebaseFirestore
 private const val HOME_DISSOLVE_MS = 300
 
 @Composable
-fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
+fun AuthNavigation(
+    modifier: Modifier = Modifier,
+    onExit: () -> Unit = {},
+    openDrinkReminder: Boolean = false,
+    onConsumeOpenDrinkReminder: () -> Unit = {},
+) {
     val navController = rememberNavController()
     var currentUserRole by rememberSaveable { mutableStateOf("member") }
     var prefilledEmail by rememberSaveable { mutableStateOf("") }
     val startDestination = remember {
         if (FirebaseAuth.getInstance().currentUser != null) "home" else "opening"
+    }
+
+    LaunchedEffect(openDrinkReminder, currentUserRole) {
+        if (!openDrinkReminder) return@LaunchedEffect
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        val currentRoute = navController.currentDestination?.route
+        val isOnAuthScreen = currentRoute == "opening" || currentRoute == "login" || currentRoute == "register"
+        if (currentUser == null || isOnAuthScreen) {
+            onConsumeOpenDrinkReminder()
+            return@LaunchedEffect
+        }
+        val isVerifiedOrAdmin = currentUser.isEmailVerified || currentUserRole == "admin"
+        if (isVerifiedOrAdmin) {
+            onConsumeOpenDrinkReminder()
+            if (currentRoute != "drink_reminder") {
+                navController.navigate("drink_reminder") {
+                    launchSingleTop = true
+                }
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -301,6 +328,22 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
         composable("latihan") {
             TrainingHomeScreen(
                 onTabSelected = navigateToTab,
+                onRoutineClick = { routineType ->
+                    if (routineType == TrainingRoutineType.WATER_REMINDER) {
+                        navController.navigate("drink_reminder") {
+                            launchSingleTop = true
+                        }
+                    }
+                },
+            )
+        }
+        composable("drink_reminder") {
+            DrinkReminderScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navigateToTab(HomeNavTab.LATIHAN)
+                    }
+                },
             )
         }
         composable("profile") {

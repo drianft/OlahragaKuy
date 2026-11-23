@@ -109,7 +109,7 @@ private val DefaultTrainingRoutines = listOf(
     TrainingRoutineUiModel(
         type = TrainingRoutineType.WATER_REMINDER,
         title = "Pengingat Minum",
-        description = "Jaga diri anda selalu terdehidrasi",
+        description = "Jaga diri anda selalu terhidrasi",
         gradientColors = listOf(Color(0xFF4C80C8), Color(0xFF8AB5EE)),
     ),
 )
@@ -168,7 +168,9 @@ fun TrainingHomeScreen(
                         routine = routine,
                         onClick = {
                             onRoutineClick(routine.type)
-                            notice = "Fitur ${routine.title} segera hadir."
+                            if (routine.type != TrainingRoutineType.WATER_REMINDER) {
+                                notice = "Fitur ${routine.title} segera hadir."
+                            }
                         },
                     )
                 }
