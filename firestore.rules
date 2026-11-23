@@ -42,6 +42,32 @@ rules_version = '2';
 //   - lastCommentId: string (optional, 20 chars)
 //   - Share: int (optional, >= 0)
 //   - createdAt: timestamp (required, == request.time, immutable)
+//
+// Collection: workout_exercises/{exerciseId}
+// Fields:
+//   - id: string (required, == exerciseId, 1..60 chars)
+//   - name: string (required, 1..80 chars)
+//   - description: string (required, 1..500 chars)
+//   - category: string (required, 1..60 chars)
+//   - illustrationKey: string (required, 1..60 chars)
+//   - defaultMode: string (required, in ['REPETITIONS', 'DURATION'])
+//   - defaultTargetValue: int (required, 1..3600)
+//   - steps: list<string> (required, 1..15 items)
+//   - order: int (required, 1..1000)
+//   - isActive: bool (required)
+//   - updatedAt: timestamp (optional, == request.time)
+//
+// Collection: guided_workout_days/{dayId}
+// Fields:
+//   - dayNumber: int (required, 1..30)
+//   - title: string (required, 1..80 chars)
+//   - description: string (required, 1..500 chars)
+//   - calories: int (required, 1..2000)
+//   - durationLabel: string (required, 1..30 chars)
+//   - difficultyLabel: string (required, in ['Mudah', 'Sedang', 'Menantang'])
+//   - exercises: list<map> (required, 1..30 items)
+//   - isActive: bool (required)
+//   - updatedAt: timestamp (optional, == request.time)
 // ===============================================================
 
 service cloud.firestore {
@@ -53,6 +79,12 @@ service cloud.firestore {
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'member') == 'admin';
     }
 
     function hasRequiredFields(fields) {
@@ -268,6 +300,90 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 2000;
         allow update, delete: if false;
       }
+    }
+
+    function isValidWorkoutExercise(data, exerciseId) {
+      return hasRequiredFields([
+          'id', 'name', 'description', 'category', 'illustrationKey',
+          'defaultMode', 'defaultTargetValue', 'steps', 'order', 'isActive'
+        ])
+        && hasOnlyAllowedFields([
+          'id', 'name', 'description', 'category', 'illustrationKey',
+          'defaultMode', 'defaultTargetValue', 'steps', 'order', 'isActive', 'updatedAt'
+        ])
+        && data.id is string
+        && data.id == exerciseId
+        && data.id.size() > 0
+        && data.id.size() <= 60
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.description is string
+        && data.description.size() > 0
+        && data.description.size() <= 500
+        && data.category is string
+        && data.category.size() > 0
+        && data.category.size() <= 60
+        && data.illustrationKey is string
+        && data.illustrationKey.size() > 0
+        && data.illustrationKey.size() <= 60
+        && data.defaultMode in ['REPETITIONS', 'DURATION']
+        && data.defaultTargetValue is int
+        && data.defaultTargetValue >= 1
+        && data.defaultTargetValue <= 3600
+        && data.steps is list
+        && data.steps.size() >= 1
+        && data.steps.size() <= 15
+        && data.order is int
+        && data.order >= 1
+        && data.order <= 1000
+        && data.isActive is bool
+        && (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt == request.time));
+    }
+
+    function isValidGuidedWorkoutDay(data, dayId) {
+      return dayId.matches('^day_(0[1-9]|[12][0-9]|30)$')
+        && hasRequiredFields([
+          'dayNumber', 'title', 'description', 'calories',
+          'durationLabel', 'difficultyLabel', 'exercises', 'isActive'
+        ])
+        && hasOnlyAllowedFields([
+          'dayNumber', 'title', 'description', 'calories',
+          'durationLabel', 'difficultyLabel', 'exercises', 'isActive', 'updatedAt'
+        ])
+        && data.dayNumber is int
+        && data.dayNumber >= 1
+        && data.dayNumber <= 30
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 80
+        && data.description is string
+        && data.description.size() > 0
+        && data.description.size() <= 500
+        && data.calories is int
+        && data.calories >= 1
+        && data.calories <= 2000
+        && data.durationLabel is string
+        && data.durationLabel.size() > 0
+        && data.durationLabel.size() <= 30
+        && data.difficultyLabel in ['Mudah', 'Sedang', 'Menantang']
+        && data.exercises is list
+        && data.exercises.size() >= 1
+        && data.exercises.size() <= 30
+        && data.isActive is bool
+        && (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt == request.time));
+    }
+
+    match /workout_exercises/{exerciseId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidWorkoutExercise(request.resource.data, exerciseId);
+      allow delete: if isAdmin();
+    }
+
+    match /guided_workout_days/{dayId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidGuidedWorkoutDay(request.resource.data, dayId);
+      allow delete: if isAdmin();
     }
   }
 }
