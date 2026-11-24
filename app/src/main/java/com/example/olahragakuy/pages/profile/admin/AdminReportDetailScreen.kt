@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -92,12 +93,14 @@ fun AdminReportDetailScreen(
     onDeletePost: (AdminReportItem) -> Unit,
     onSendWarning: (report: AdminReportItem, title: String, description: String) -> Unit,
     modifier: Modifier = Modifier,
+    actionBusy: Boolean = false,
 ) {
     var activeOverlay by remember(report.id) { mutableStateOf(ReportActionOverlay.NONE) }
     var warningTitle by remember(report.id) { mutableStateOf("Notifikasi Warning") }
     var warningDescription by remember(report.id) { mutableStateOf("") }
 
     BackHandler {
+        if (actionBusy) return@BackHandler
         if (activeOverlay != ReportActionOverlay.NONE) {
             activeOverlay = ReportActionOverlay.NONE
         } else {
@@ -183,6 +186,7 @@ fun AdminReportDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
                     Button(
+                        enabled = !actionBusy,
                         onClick = { onIgnore(report) },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -202,6 +206,7 @@ fun AdminReportDetailScreen(
                     }
 
                     Button(
+                        enabled = !actionBusy,
                         onClick = { activeOverlay = ReportActionOverlay.ACTION_MENU },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -222,9 +227,9 @@ fun AdminReportDetailScreen(
                 }
             }
 
-            // Scrim gelap saat overlay aktif
+            // Scrim gelap saat overlay aktif atau proses Firestore sedang berjalan
             AnimatedVisibility(
-                visible = activeOverlay != ReportActionOverlay.NONE,
+                visible = activeOverlay != ReportActionOverlay.NONE || actionBusy,
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
@@ -235,9 +240,14 @@ fun AdminReportDetailScreen(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = { activeOverlay = ReportActionOverlay.NONE },
+                            onClick = { if (!actionBusy) activeOverlay = ReportActionOverlay.NONE },
                         ),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (actionBusy && activeOverlay == ReportActionOverlay.NONE) {
+                        CircularProgressIndicator(color = HomeOrange)
+                    }
+                }
             }
 
             // Overlay 1: Menu Tindakan (Hapus Postingan / Beri Peringatan)

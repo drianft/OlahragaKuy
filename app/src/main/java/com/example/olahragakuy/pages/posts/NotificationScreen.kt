@@ -177,6 +177,7 @@ fun NotificationScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedWarning by remember { mutableStateOf<NotificationUiModel?>(null) }
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
 
     val currentUser = remember { currentUserOrNull() }
@@ -357,7 +358,13 @@ fun NotificationScreen(
         PreviewNotifications
     } else {
         (localSnapshot + remoteNotifications + derivedNotifications)
-            .distinctBy { "${it.type.code}:${it.postId}:${it.actorName.lowercase()}" }
+            .distinctBy { item ->
+                if (item.type == NotificationType.WARNING) {
+                    "WARNING:${item.id}"
+                } else {
+                    "${item.type.code}:${item.postId}:${item.actorName.lowercase()}"
+                }
+            }
     }
 
     val groupedNotifications = remember(allNotifications, isPreview) {
@@ -512,14 +519,24 @@ fun NotificationScreen(
                             ) { index, item ->
                                 NotificationItemRow(
                                     item = item,
-                                    avatarColor = NotificationAvatarColors[
-                                        index % NotificationAvatarColors.size
-                                    ],
+                                    avatarColor = if (item.type == NotificationType.WARNING) {
+                                        HomeOrange
+                                    } else {
+                                        NotificationAvatarColors[
+                                            index % NotificationAvatarColors.size
+                                        ]
+                                    },
                                     onAvatarClick = {
-                                        onUserProfileClick(item.actorId, item.actorName)
+                                        if (item.type == NotificationType.WARNING) {
+                                            selectedWarning = item
+                                        } else {
+                                            onUserProfileClick(item.actorId, item.actorName)
+                                        }
                                     },
                                     onClick = {
-                                        if (item.postId.isNotBlank()) {
+                                        if (item.type == NotificationType.WARNING) {
+                                            selectedWarning = item
+                                        } else if (item.postId.isNotBlank()) {
                                             selectedPostId = item.postId
                                         } else {
                                             onUserProfileClick(item.actorId, item.actorName)
@@ -532,6 +549,38 @@ fun NotificationScreen(
                 }
             }
         }
+    }
+
+    selectedWarning?.let { warning ->
+        AlertDialog(
+            onDismissRequest = { selectedWarning = null },
+            title = {
+                Text(warning.title.ifBlank { "Notifikasi Warning" })
+            },
+            text = {
+                Text(
+                    warning.description.ifBlank {
+                        "Admin mengirimkan peringatan terkait aktivitas akun atau postingan Anda."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedWarning = null }) { Text("Mengerti") }
+            },
+            dismissButton = if (warning.postId.isNotBlank()) {
+                {
+                    TextButton(
+                        onClick = {
+                            val targetPostId = warning.postId
+                            selectedWarning = null
+                            selectedPostId = targetPostId
+                        },
+                    ) { Text("Lihat Postingan") }
+                }
+            } else {
+                null
+            },
+        )
     }
 
     notice?.let { message ->
@@ -582,11 +631,21 @@ private fun NotificationItemRow(
         }
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append(item.actorName)
+                if (item.type == NotificationType.WARNING) {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = HomeOrange)) {
+                        append(item.title.ifBlank { "Notifikasi Warning" })
+                    }
+                    if (item.description.isNotBlank()) {
+                        append(": ")
+                        append(item.description)
+                    }
+                } else {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(item.actorName)
+                    }
+                    append(" ")
+                    append(item.type.message)
                 }
-                append(" ")
-                append(item.type.message)
             },
             color = HomeText,
             fontSize = 11.sp,

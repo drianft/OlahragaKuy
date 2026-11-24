@@ -24,11 +24,12 @@ val DefaultPostCategories = listOf(
     "Kardio",
 )
 
-/** Jenis notifikasi aktivitas postingan. */
+/** Jenis notifikasi aktivitas postingan & peringatan admin. */
 enum class NotificationType(val code: String, val message: String) {
     LIKE("LIKE", "menyukai postingan anda"),
     COMMENT("COMMENT", "mengomentari postingan anda"),
-    TAG("TAG", "menandai anda di sebuah postingan");
+    TAG("TAG", "menandai anda di sebuah postingan"),
+    WARNING("WARNING", "mengirim peringatan admin");
 
     companion object {
         fun fromCode(raw: String?): NotificationType =
@@ -44,6 +45,8 @@ data class NotificationUiModel(
     val type: NotificationType,
     val postId: String,
     val createdAtMillis: Long = System.currentTimeMillis(),
+    val title: String = "",
+    val description: String = "",
 )
 
 /** Representasi UI satu postingan di beranda, pencarian, dan detail notifikasi. */
@@ -149,6 +152,8 @@ fun parseNotificationUiModel(
     val timestampMillis = (data["createdAt"] as? Timestamp)?.toDate()?.time
         ?: (data["createdAtMillis"] as? Number)?.toLong()
         ?: fallbackMillis
+    val title = (data["title"] as? String)?.trim().orEmpty()
+    val description = (data["description"] as? String)?.trim().orEmpty()
     if (id.isBlank()) return null
     return NotificationUiModel(
         id = id,
@@ -157,6 +162,8 @@ fun parseNotificationUiModel(
         type = type,
         postId = postId,
         createdAtMillis = timestampMillis,
+        title = title,
+        description = description,
     )
 }
 

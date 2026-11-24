@@ -59,6 +59,8 @@ import com.example.olahragakuy.pages.posts.syncCurrentUserToFirestore
 import com.example.olahragakuy.pages.posts.toPostUiModel
 import com.example.olahragakuy.pages.posts.togglePostLike
 import com.example.olahragakuy.pages.posts.withLocalState
+import com.example.olahragakuy.pages.profile.admin.ReportPostDialog
+import com.example.olahragakuy.pages.profile.admin.submitPostReport
 import com.example.olahragakuy.ui.components.CreatePostPromptBar
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.HomePostCard
@@ -89,6 +91,8 @@ fun HomeScreen(
 ) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
+    var postPendingReport by remember { mutableStateOf<PostUiModel?>(null) }
+    var reportSubmitting by remember { mutableStateOf(false) }
     var posts by remember { mutableStateOf<List<PostUiModel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
@@ -215,11 +219,38 @@ fun HomeScreen(
                             onAction = { notice = it },
                             onCommentClick = { activeCommentPostId = post.id },
                             onAuthorClick = { onUserProfileClick(post.authorId, post.authorName) },
+                            onReportClick = { postPendingReport = post },
                         )
                     }
                 }
             }
         }
+    }
+
+    postPendingReport?.let { targetPost ->
+        ReportPostDialog(
+            reportedUsername = targetPost.authorName,
+            submitting = reportSubmitting,
+            onDismiss = { postPendingReport = null },
+            onSubmit = { category, description ->
+                reportSubmitting = true
+                submitPostReport(
+                    post = targetPost,
+                    reportCategory = category,
+                    reportDescription = description,
+                    onSuccess = {
+                        reportSubmitting = false
+                        postPendingReport = null
+                        notice = "Laporan untuk postingan @${targetPost.authorName} berhasil dikirim ke Admin."
+                    },
+                    onError = { err ->
+                        reportSubmitting = false
+                        postPendingReport = null
+                        notice = err
+                    },
+                )
+            },
+        )
     }
 
     notice?.let { message ->

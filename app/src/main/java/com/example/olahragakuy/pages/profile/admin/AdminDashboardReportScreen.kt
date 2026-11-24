@@ -42,8 +42,10 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -51,9 +53,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -64,6 +69,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -104,6 +110,8 @@ data class AdminReportItem(
     val sharesCount: Int = 8,
     val reportDescription: String = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis...",
     val postDocumentId: String? = null,
+    val reportedUserId: String = "",
+    val createdAtMillis: Long = 0L,
 )
 
 data class AdminReportFilterState(
@@ -207,15 +215,54 @@ private val ReportDividerColor = Color(0xFF10243C)
 fun AdminDashboardReportScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    reports: List<AdminReportItem> = SampleAdminReports,
+    reports: List<AdminReportItem>? = null,
     onReportClick: ((AdminReportItem) -> Unit)? = null,
-    onIgnoreReport: (AdminReportItem) -> Unit = {},
-    onDeleteReportedPost: (AdminReportItem) -> Unit = {},
-    onSendWarning: (report: AdminReportItem, title: String, description: String) -> Unit = { _, _, _ -> },
+    onIgnoreReport: ((AdminReportItem) -> Unit)? = null,
+    onDeleteReportedPost: ((AdminReportItem) -> Unit)? = null,
+    onSendWarning: ((report: AdminReportItem, title: String, description: String) -> Unit)? = null,
 ) {
+    val isPreview = LocalInspectionMode.current
+    val useFirestoreBackend = !isPreview && reports == null
     val focusManager = LocalFocusManager.current
-    val availableCategories = remember(reports) {
-        (DefaultAdminReportCategories + reports.map { it.reportCategory }).distinct()
+
+    var remoteReports by remember { mutableStateOf<List<AdminReportItem>>(emptyList()) }
+    var loadingReports by remember { mutableStateOf(useFirestoreBackend) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var retryCount by remember { mutableIntStateOf(0) }
+    var actionBusy by remember { mutableStateOf(false) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(useFirestoreBackend, retryCount) {
+        if (!useFirestoreBackend) {
+            loadingReports = false
+            loadError = null
+            onDispose {}
+        } else {
+            loadingReports = true
+            loadError = null
+            val registration = observePendingAdminReports(
+                onReportsChanged = { items ->
+                    remoteReports = items
+                    loadingReports = false
+                    loadError = null
+                },
+                onError = { message ->
+                    loadingReports = false
+                    loadError = message
+                },
+            )
+            onDispose { registration.remove() }
+        }
+    }
+
+    val sourceReports = when {
+        reports != null -> reports
+        isPreview -> SampleAdminReports
+        else -> remoteReports
+    }
+
+    val availableCategories = remember(sourceReports) {
+        (DefaultAdminReportCategories + sourceReports.map { it.reportCategory }).distinct()
     }
 
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -234,9 +281,9 @@ fun AdminDashboardReportScreen(
     var dismissedReportIds by rememberSaveable { mutableStateOf(listOf<String>()) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
 
-    val activeReports = remember(reports, dismissedReportIds) {
+    val activeReports = remember(sourceReports, dismissedReportIds) {
         val dismissedSet = dismissedReportIds.toSet()
-        reports.filterNot { it.id in dismissedSet }
+        sourceReports.filterNot { it.id in dismissedSet }
     }
 
     val selectedReport = remember(activeReports, selectedReportId) {
@@ -246,27 +293,95 @@ fun AdminDashboardReportScreen(
     if (selectedReport != null) {
         AdminReportDetailScreen(
             report = selectedReport,
-            onBack = { selectedReportId = null },
+            actionBusy = actionBusy,
+            onBack = { if (!actionBusy) selectedReportId = null },
             onIgnore = { report ->
-                dismissedReportIds = dismissedReportIds + report.id
-                selectedReportId = null
-                feedbackMessage = "Laporan terhadap @${report.reportedUsername} diabaikan"
-                onIgnoreReport(report)
+                if (useFirestoreBackend) {
+                    actionBusy = true
+                    ignoreAdminReport(
+                        report = report,
+                        onSuccess = {
+                            actionBusy = false
+                            dismissedReportIds = dismissedReportIds + report.id
+                            selectedReportId = null
+                            feedbackMessage = "Laporan terhadap @${report.reportedUsername} diabaikan"
+                            onIgnoreReport?.invoke(report)
+                        },
+                        onError = { err ->
+                            actionBusy = false
+                            actionError = err
+                        },
+                    )
+                } else {
+                    dismissedReportIds = dismissedReportIds + report.id
+                    selectedReportId = null
+                    feedbackMessage = "Laporan terhadap @${report.reportedUsername} diabaikan"
+                    onIgnoreReport?.invoke(report)
+                }
             },
             onDeletePost = { report ->
-                dismissedReportIds = dismissedReportIds + report.id
-                selectedReportId = null
-                feedbackMessage = "Postingan @${report.reportedUsername} berhasil dihapus"
-                onDeleteReportedPost(report)
+                if (useFirestoreBackend) {
+                    actionBusy = true
+                    deleteReportedPost(
+                        report = report,
+                        onSuccess = {
+                            actionBusy = false
+                            dismissedReportIds = dismissedReportIds + report.id
+                            selectedReportId = null
+                            feedbackMessage = "Postingan @${report.reportedUsername} berhasil dihapus"
+                            onDeleteReportedPost?.invoke(report)
+                        },
+                        onError = { err ->
+                            actionBusy = false
+                            actionError = err
+                        },
+                    )
+                } else {
+                    dismissedReportIds = dismissedReportIds + report.id
+                    selectedReportId = null
+                    feedbackMessage = "Postingan @${report.reportedUsername} berhasil dihapus"
+                    onDeleteReportedPost?.invoke(report)
+                }
             },
             onSendWarning = { report, title, description ->
-                dismissedReportIds = dismissedReportIds + report.id
-                selectedReportId = null
-                feedbackMessage = "Peringatan \"$title\" dikirim ke @${report.reportedUsername}"
-                onSendWarning(report, title, description)
+                if (useFirestoreBackend) {
+                    actionBusy = true
+                    sendAdminWarningNotification(
+                        report = report,
+                        title = title,
+                        description = description,
+                        onSuccess = {
+                            actionBusy = false
+                            dismissedReportIds = dismissedReportIds + report.id
+                            selectedReportId = null
+                            feedbackMessage = "Peringatan \"$title\" dikirim ke @${report.reportedUsername}"
+                            onSendWarning?.invoke(report, title, description)
+                        },
+                        onError = { err ->
+                            actionBusy = false
+                            actionError = err
+                        },
+                    )
+                } else {
+                    dismissedReportIds = dismissedReportIds + report.id
+                    selectedReportId = null
+                    feedbackMessage = "Peringatan \"$title\" dikirim ke @${report.reportedUsername}"
+                    onSendWarning?.invoke(report, title, description)
+                }
             },
             modifier = modifier,
         )
+
+        actionError?.let { msg ->
+            AlertDialog(
+                onDismissRequest = { actionError = null },
+                title = { Text("Gagal memproses tindakan") },
+                text = { Text(msg) },
+                confirmButton = {
+                    TextButton(onClick = { actionError = null }) { Text("Mengerti") }
+                },
+            )
+        }
         return
     }
 
@@ -432,49 +547,114 @@ fun AdminDashboardReportScreen(
 
             Spacer(Modifier.height(18.dp))
 
-            if (filteredReports.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Tidak ada laporan yang cocok",
-                            color = HomeText,
-                            fontFamily = Poppins,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "Coba ubah kata kunci pencarian atau filter aktif.",
-                            color = HomeText.copy(alpha = 0.7f),
-                            fontFamily = Poppins,
-                            fontSize = 12.sp,
-                        )
+            when {
+                loadingReports -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(color = HomeOrange)
                     }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                ) {
-                    items(filteredReports, key = { it.id }) { report ->
-                        AdminReportCard(
-                            report = report,
-                            onClick = {
-                                if (onReportClick != null) {
-                                    onReportClick(report)
+                loadError != null -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        ) {
+                            Text(
+                                text = "Gagal memuat laporan",
+                                color = HomeText,
+                                fontFamily = Poppins,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = loadError.orEmpty(),
+                                color = HomeText.copy(alpha = 0.75f),
+                                fontFamily = Poppins,
+                                fontSize = 12.sp,
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = { retryCount++ },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = HomeOrange,
+                                    contentColor = Color.White,
+                                ),
+                            ) {
+                                Text(
+                                    text = "Coba Lagi",
+                                    fontFamily = Poppins,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+                filteredReports.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = if (activeReports.isEmpty()) {
+                                    "Belum ada laporan masuk"
                                 } else {
-                                    selectedReportId = report.id
-                                }
-                            },
-                        )
+                                    "Tidak ada laporan yang cocok"
+                                },
+                                color = HomeText,
+                                fontFamily = Poppins,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = if (activeReports.isEmpty()) {
+                                    "Semua laporan pending sudah selesai ditangani."
+                                } else {
+                                    "Coba ubah kata kunci pencarian atau filter aktif."
+                                },
+                                color = HomeText.copy(alpha = 0.7f),
+                                fontFamily = Poppins,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                    ) {
+                        items(filteredReports, key = { it.id }) { report ->
+                            AdminReportCard(
+                                report = report,
+                                onClick = {
+                                    if (onReportClick != null) {
+                                        onReportClick(report)
+                                    } else {
+                                        selectedReportId = report.id
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }

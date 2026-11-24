@@ -18,12 +18,41 @@ rules_version = '2';
 //   - photoUrl / avatarUrl: string (optional, <= 1000 chars)
 //
 // Subcollection: users/{userId}/notifications/{notificationId}
-// Fields:
+// Fields (activity notifications):
 //   - actorId: string (required, == request.auth.uid)
 //   - actorName: string (required, 1..100 chars)
 //   - postId: string (required, 1..100 chars)
 //   - type: string (required, in ['LIKE', 'COMMENT', 'TAG'])
 //   - createdAt: timestamp (required, == request.time)
+// Fields (admin warning notifications, admin-only):
+//   - actorId: string (required, == request.auth.uid)
+//   - actorName: string (required, 1..100 chars)
+//   - postId: string (optional, 0..100 chars)
+//   - type: string (required, == 'WARNING')
+//   - title: string (required, 1..120 chars)
+//   - description: string (required, 0..1000 chars)
+//   - createdAt: timestamp (required, == request.time)
+//
+// Collection: reports/{reportId}
+// Fields:
+//   - type: string (required, in ['POST', 'COMMENT', 'LOCATION', 'ACCOUNT'])
+//   - status: string (required, 'PENDING' on create; admin may transition to 'IGNORED', 'RESOLVED_DELETED', 'RESOLVED_WARNED')
+//   - reportedUserId: string (optional, 0..128 chars)
+//   - reportedUsername: string (required, 1..100 chars)
+//   - reporterUserId: string (required, == request.auth.uid)
+//   - reporterUsername: string (required, 1..100 chars)
+//   - reportCategory: string (required, 1..120 chars)
+//   - reportDescription: string (optional, 0..1000 chars)
+//   - contentPreview: string (optional, 0..500 chars)
+//   - thumbnailUrl: string (optional, 0..1000 chars)
+//   - postDocumentId: string (optional, 0..128 chars)
+//   - postTime: string (optional, 0..64 chars)
+//   - likesCount, commentsCount, sharesCount: int (optional, >= 0)
+//   - createdAt: timestamp (required, == request.time)
+//   - resolvedBy: string (admin update only, == request.auth.uid)
+//   - resolvedAt: timestamp (admin update only, == request.time)
+//   - warningTitle: string (admin update only, 0..120 chars)
+//   - warningDescription: string (admin update only, 0..1000 chars)
 //
 // Collection: posts/{postId}
 // Fields:
@@ -131,6 +160,78 @@ service cloud.firestore {
         && data.createdAt == request.time;
     }
 
+    function isValidAdminWarningNotification(data) {
+      return hasRequiredFields(['actorId', 'actorName', 'type', 'title', 'description', 'createdAt'])
+        && hasOnlyAllowedFields(['actorId', 'actorName', 'postId', 'type', 'title', 'description', 'createdAt'])
+        && data.actorId is string
+        && data.actorId == request.auth.uid
+        && data.actorName is string
+        && data.actorName.size() > 0
+        && data.actorName.size() <= 100
+        && (!('postId' in data) || (data.postId is string && data.postId.size() <= 100))
+        && data.type == 'WARNING'
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 120
+        && data.description is string
+        && data.description.size() <= 1000
+        && data.createdAt is timestamp
+        && data.createdAt == request.time;
+    }
+
+    function isValidReportCreate(data) {
+      return hasRequiredFields([
+          'type', 'status', 'reportedUsername', 'reporterUserId',
+          'reporterUsername', 'reportCategory', 'createdAt'
+        ])
+        && hasOnlyAllowedFields([
+          'type', 'status', 'reportedUserId', 'reportedUsername',
+          'reporterUserId', 'reporterUsername', 'reportCategory',
+          'reportDescription', 'contentPreview', 'thumbnailUrl',
+          'postDocumentId', 'postTime', 'likesCount', 'commentsCount',
+          'sharesCount', 'createdAt'
+        ])
+        && data.type in ['POST', 'COMMENT', 'LOCATION', 'ACCOUNT']
+        && data.status == 'PENDING'
+        && (!('reportedUserId' in data) || (data.reportedUserId is string && data.reportedUserId.size() <= 128))
+        && data.reportedUsername is string
+        && data.reportedUsername.size() > 0
+        && data.reportedUsername.size() <= 100
+        && data.reporterUserId is string
+        && data.reporterUserId == request.auth.uid
+        && data.reporterUsername is string
+        && data.reporterUsername.size() > 0
+        && data.reporterUsername.size() <= 100
+        && data.reportCategory is string
+        && data.reportCategory.size() > 0
+        && data.reportCategory.size() <= 120
+        && (!('reportDescription' in data) || (data.reportDescription is string && data.reportDescription.size() <= 1000))
+        && (!('contentPreview' in data) || (data.contentPreview is string && data.contentPreview.size() <= 500))
+        && (!('thumbnailUrl' in data) || (data.thumbnailUrl is string && data.thumbnailUrl.size() <= 1000))
+        && (!('postDocumentId' in data) || (data.postDocumentId is string && data.postDocumentId.size() <= 128))
+        && (!('postTime' in data) || (data.postTime is string && data.postTime.size() <= 64))
+        && (!('likesCount' in data) || (data.likesCount is int && data.likesCount >= 0))
+        && (!('commentsCount' in data) || (data.commentsCount is int && data.commentsCount >= 0))
+        && (!('sharesCount' in data) || (data.sharesCount is int && data.sharesCount >= 0))
+        && data.createdAt is timestamp
+        && data.createdAt == request.time;
+    }
+
+    function isValidReportResolutionUpdate() {
+      let next = request.resource.data;
+      return resource.data.status == 'PENDING'
+        && next.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'resolvedBy', 'resolvedAt', 'warningTitle', 'warningDescription'
+        ])
+        && next.status in ['IGNORED', 'RESOLVED_DELETED', 'RESOLVED_WARNED']
+        && next.resolvedBy is string
+        && next.resolvedBy == request.auth.uid
+        && next.resolvedAt is timestamp
+        && next.resolvedAt == request.time
+        && (!('warningTitle' in next) || (next.warningTitle is string && next.warningTitle.size() <= 120))
+        && (!('warningDescription' in next) || (next.warningDescription is string && next.warningDescription.size() <= 1000));
+    }
+
     function isValidPostCreate(data) {
       return hasRequiredFields(['authorId', 'authorName', 'caption', 'createdAt'])
         && hasOnlyAllowedFields([
@@ -217,7 +318,12 @@ service cloud.firestore {
 
       match /notifications/{notificationId} {
         allow read, delete: if isOwner(userId);
-        allow create, update: if isAuthenticated() && isValidNotification(request.resource.data);
+        allow create: if (isAuthenticated() && isValidNotification(request.resource.data))
+          || (isAdmin() && isValidAdminWarningNotification(request.resource.data));
+        allow update: if isAuthenticated()
+          && resource.data.type != 'WARNING'
+          && resource.data.actorId == request.auth.uid
+          && isValidNotification(request.resource.data);
       }
 
       match /custom_workouts/{workoutId} {
@@ -274,7 +380,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidPostCreate(request.resource.data);
       allow update: if validCommentIncrement() || validPostLikeUpdate() || validPostCaptionUpdate();
-      allow delete: if isAuthenticated() && resource.data.authorId == request.auth.uid;
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.authorId == request.auth.uid);
 
       match /comments/{commentId} {
         function validReply() {
@@ -483,6 +589,13 @@ service cloud.firestore {
     match /guided_workout_days/{dayId} {
       allow read: if true;
       allow create, update: if (isAuthenticated() && isValidGuidedWorkoutDay(request.resource.data, dayId)) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && isValidReportCreate(request.resource.data);
+      allow update: if isAdmin() && isValidReportResolutionUpdate();
       allow delete: if isAdmin();
     }
 

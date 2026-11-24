@@ -13,6 +13,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.olahragakuy.pages.profile.admin.ReportPostDialog
+import com.example.olahragakuy.pages.profile.admin.submitUserPostReport
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.KuyBottomNavBar
 import com.example.olahragakuy.ui.theme.KuyNavy
@@ -53,6 +55,8 @@ fun OtherUserProfileScreen(
     var loading by remember(cleanTargetUid, fallbackName) { mutableStateOf(true) }
     var loadError by remember(cleanTargetUid) { mutableStateOf(false) }
     var actionError by remember(cleanTargetUid) { mutableStateOf<String?>(null) }
+    var postPendingReport by remember(cleanTargetUid) { mutableStateOf<UserPost?>(null) }
+    var reportSubmitting by remember(cleanTargetUid) { mutableStateOf(false) }
     var retry by remember(cleanTargetUid) { mutableIntStateOf(0) }
 
     DisposableEffect(cleanTargetUid, fallbackName, currentUser?.uid, retry) {
@@ -231,8 +235,38 @@ fun OtherUserProfileScreen(
                 val resolvedName = profile.displayName.ifBlank { profile.username }
                 onMessageClick(resolvedUid, resolvedName)
             },
+            onReportPost = { post -> postPendingReport = post },
             onTabSelected = onTabSelected,
             onHomeClick = onHomeClick,
+        )
+    }
+
+    postPendingReport?.let { targetPost ->
+        val reportedName = profile.username.ifBlank { profile.displayName }
+        ReportPostDialog(
+            reportedUsername = reportedName,
+            submitting = reportSubmitting,
+            onDismiss = { postPendingReport = null },
+            onSubmit = { category, description ->
+                reportSubmitting = true
+                submitUserPostReport(
+                    post = targetPost,
+                    reportedUserId = cleanTargetUid,
+                    reportedUsername = reportedName,
+                    reportCategory = category,
+                    reportDescription = description,
+                    onSuccess = {
+                        reportSubmitting = false
+                        postPendingReport = null
+                        actionError = "Laporan untuk postingan @$reportedName berhasil dikirim ke Admin."
+                    },
+                    onError = { err ->
+                        reportSubmitting = false
+                        postPendingReport = null
+                        actionError = err
+                    },
+                )
+            },
         )
     }
 
@@ -286,6 +320,7 @@ internal fun OtherUserProfileContent(
     onToggleFollow: () -> Unit = {},
     onMessageClick: () -> Unit = {},
     onPostClick: (UserPost) -> Unit = {},
+    onReportPost: ((UserPost) -> Unit)? = null,
     onTabSelected: (HomeNavTab) -> Unit = {},
     onHomeClick: () -> Unit = {},
 ) {
@@ -331,6 +366,7 @@ internal fun OtherUserProfileContent(
                 username = displayName,
                 posts = feedPosts,
                 onPostClick = onPostClick,
+                onReportPost = onReportPost,
                 modifier = contentModifier,
                 header = header,
             )
