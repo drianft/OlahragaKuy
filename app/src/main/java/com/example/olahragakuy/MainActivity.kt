@@ -11,16 +11,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.olahragakuy.pages.drinkreminder.DrinkReminderScheduler
+import com.example.olahragakuy.pages.steptracker.StepTrackerService
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 
 class MainActivity : ComponentActivity() {
     private var openDrinkReminderRequested by mutableStateOf(false)
+    private var openStepTrackerRequested by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
 
         handleDrinkReminderIntent(intent)
+        handleStepTrackerIntent(intent)
 
         // Remove the system splash overlay immediately on the first frame without scaling
         // because OpeningScreen's initial frame is pixel-aligned with the system splash icon.
@@ -38,6 +41,8 @@ class MainActivity : ComponentActivity() {
                     onExit = { finish() },
                     openDrinkReminder = openDrinkReminderRequested,
                     onConsumeOpenDrinkReminder = { openDrinkReminderRequested = false },
+                    openStepTracker = openStepTrackerRequested,
+                    onConsumeOpenStepTracker = { openStepTrackerRequested = false },
                 )
             }
         }
@@ -47,12 +52,20 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleDrinkReminderIntent(intent)
+        handleStepTrackerIntent(intent)
     }
 
     private fun handleDrinkReminderIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(DrinkReminderScheduler.EXTRA_OPEN_DRINK_REMINDER, false) == true) {
             openDrinkReminderRequested = true
             intent.removeExtra(DrinkReminderScheduler.EXTRA_OPEN_DRINK_REMINDER)
+        }
+    }
+
+    private fun handleStepTrackerIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(StepTrackerService.EXTRA_OPEN_STEP_TRACKER, false) == true) {
+            openStepTrackerRequested = true
+            intent.removeExtra(StepTrackerService.EXTRA_OPEN_STEP_TRACKER)
         }
     }
 }

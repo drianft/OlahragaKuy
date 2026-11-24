@@ -37,6 +37,7 @@ import com.example.olahragakuy.pages.posts.resolveDisplayName
 import com.example.olahragakuy.pages.drinkreminder.DrinkReminderScreen
 import com.example.olahragakuy.pages.profile.user.LoggedInProfileScreen
 import com.example.olahragakuy.pages.profile.user.OtherUserProfileScreen
+import com.example.olahragakuy.pages.steptracker.StepTrackerScreen
 import com.example.olahragakuy.pages.training.CreateCustomWorkoutScreen
 import com.example.olahragakuy.pages.training.CustomWorkoutDetailScreen
 import com.example.olahragakuy.pages.training.CustomWorkoutListScreen
@@ -73,6 +74,8 @@ fun AuthNavigation(
     onExit: () -> Unit = {},
     openDrinkReminder: Boolean = false,
     onConsumeOpenDrinkReminder: () -> Unit = {},
+    openStepTracker: Boolean = false,
+    onConsumeOpenStepTracker: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     var currentUserRole by rememberSaveable { mutableStateOf("member") }
@@ -132,6 +135,26 @@ fun AuthNavigation(
             onConsumeOpenDrinkReminder()
             if (currentRoute != "drink_reminder") {
                 navController.navigate("drink_reminder") {
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(openStepTracker, currentUserRole) {
+        if (!openStepTracker) return@LaunchedEffect
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        val currentRoute = navController.currentDestination?.route
+        val isOnAuthScreen = currentRoute == "opening" || currentRoute == "login" || currentRoute == "register"
+        if (currentUser == null || isOnAuthScreen) {
+            onConsumeOpenStepTracker()
+            return@LaunchedEffect
+        }
+        val isVerifiedOrAdmin = currentUser.isEmailVerified || currentUserRole == "admin"
+        if (isVerifiedOrAdmin) {
+            onConsumeOpenStepTracker()
+            if (currentRoute != "step_tracker") {
+                navController.navigate("step_tracker") {
                     launchSingleTop = true
                 }
             }
@@ -388,6 +411,11 @@ fun AuthNavigation(
                         launchSingleTop = true
                     }
                 },
+                onStepTrackerClick = {
+                    navController.navigate("step_tracker") {
+                        launchSingleTop = true
+                    }
+                },
                 onWaterReminderClick = {
                     navController.navigate("drink_reminder") {
                         launchSingleTop = true
@@ -589,6 +617,15 @@ fun AuthNavigation(
         }
         composable("drink_reminder") {
             DrinkReminderScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navigateToTab(HomeNavTab.LATIHAN)
+                    }
+                },
+            )
+        }
+        composable("step_tracker") {
+            StepTrackerScreen(
                 onBack = {
                     if (!navController.popBackStack()) {
                         navigateToTab(HomeNavTab.LATIHAN)
