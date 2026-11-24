@@ -122,6 +122,7 @@ fun TrainingHomeScreen(
     routines: List<TrainingRoutineUiModel> = DefaultTrainingRoutines,
     onTabSelected: (HomeNavTab) -> Unit = {},
     onRoutineClick: (TrainingRoutineType) -> Unit = {},
+    onHomeWorkoutClick: (() -> Unit)? = null,
 ) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -168,7 +169,9 @@ fun TrainingHomeScreen(
                         routine = routine,
                         onClick = {
                             onRoutineClick(routine.type)
-                            if (routine.type != TrainingRoutineType.WATER_REMINDER) {
+                            if (routine.type == TrainingRoutineType.HOME_WORKOUT && onHomeWorkoutClick != null) {
+                                onHomeWorkoutClick()
+                            } else {
                                 notice = "Fitur ${routine.title} segera hadir."
                             }
                         },
@@ -400,13 +403,18 @@ private fun RoutineIllustration(
     type: TrainingRoutineType,
     modifier: Modifier = Modifier,
 ) {
-    Canvas(modifier = modifier) {
-        when (type) {
-            TrainingRoutineType.HOME_WORKOUT -> drawHomeWorkoutIllustration()
-            TrainingRoutineType.STEP_TRACKER -> drawStepTrackerIllustration()
-            TrainingRoutineType.WATER_REMINDER -> drawWaterReminderIllustration()
-        }
+    if (type == TrainingRoutineType.HOME_WORKOUT) {
+        Canvas(modifier = modifier) { drawHomeWorkoutIllustration() }
+        return
     }
+    Image(
+        painter = painterResource(
+            if (type == TrainingRoutineType.STEP_TRACKER) R.drawable.running else R.drawable.drink
+        ),
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = ContentScale.Fit,
+    )
 }
 
 private fun DrawScope.drawHomeWorkoutIllustration() {
@@ -461,114 +469,6 @@ private fun DrawScope.drawHomeWorkoutIllustration() {
         topLeft = Offset(w * 0.74f, h * 0.68f),
         size = Size(w * 0.08f, h * 0.18f),
         cornerRadius = CornerRadius(2.dp.toPx()),
-    )
-}
-
-private fun DrawScope.drawStepTrackerIllustration() {
-    val w = size.width
-    val h = size.height
-    // White & orange running track oval
-    drawOval(
-        color = Color(0xFFF3F6F9),
-        topLeft = Offset(w * 0.06f, h * 0.46f),
-        size = Size(w * 0.88f, h * 0.48f),
-    )
-    drawOval(
-        color = Color(0xFFF4B97A),
-        topLeft = Offset(w * 0.16f, h * 0.50f),
-        size = Size(w * 0.68f, h * 0.38f),
-    )
-    // Trees in background
-    listOf(0.18f, 0.28f, 0.76f, 0.85f).forEach { xRatio ->
-        val treePath = Path().apply {
-            moveTo(w * xRatio, h * 0.22f)
-            lineTo(w * (xRatio - 0.06f), h * 0.50f)
-            lineTo(w * (xRatio + 0.06f), h * 0.50f)
-            close()
-        }
-        drawPath(treePath, color = Color.White.copy(alpha = 0.88f))
-    }
-    // Runner figure
-    drawCircle(
-        color = Color(0xFF4A2E21),
-        radius = h * 0.085f,
-        center = Offset(w * 0.48f, h * 0.22f),
-    )
-    drawRoundRect(
-        color = Color(0xFFEAEFF5),
-        topLeft = Offset(w * 0.42f, h * 0.31f),
-        size = Size(w * 0.14f, h * 0.20f),
-        cornerRadius = CornerRadius(5.dp.toPx()),
-    )
-    drawLine(
-        color = Color(0xFF222D3A),
-        start = Offset(w * 0.48f, h * 0.51f),
-        end = Offset(w * 0.36f, h * 0.78f),
-        strokeWidth = 5.dp.toPx(),
-        cap = StrokeCap.Round,
-    )
-    drawLine(
-        color = Color(0xFF222D3A),
-        start = Offset(w * 0.51f, h * 0.51f),
-        end = Offset(w * 0.63f, h * 0.74f),
-        strokeWidth = 5.dp.toPx(),
-        cap = StrokeCap.Round,
-    )
-}
-
-private fun DrawScope.drawWaterReminderIllustration() {
-    val w = size.width
-    val h = size.height
-    // Base oval platform
-    drawOval(
-        color = Color(0xFFF3F6FC),
-        topLeft = Offset(w * 0.08f, h * 0.56f),
-        size = Size(w * 0.84f, h * 0.38f),
-    )
-    // Large water bottle behind athlete
-    drawRoundRect(
-        color = Color(0xFFE7A93C),
-        topLeft = Offset(w * 0.45f, h * 0.20f),
-        size = Size(w * 0.24f, h * 0.58f),
-        cornerRadius = CornerRadius(8.dp.toPx()),
-    )
-    drawRoundRect(
-        color = Color.White.copy(alpha = 0.88f),
-        topLeft = Offset(w * 0.45f, h * 0.38f),
-        size = Size(w * 0.24f, h * 0.22f),
-        cornerRadius = CornerRadius(4.dp.toPx()),
-    )
-    drawRoundRect(
-        color = Color(0xFFD18B1E),
-        topLeft = Offset(w * 0.52f, h * 0.11f),
-        size = Size(w * 0.10f, h * 0.09f),
-        cornerRadius = CornerRadius(3.dp.toPx()),
-    )
-    // Person drinking on left of bottle
-    drawCircle(
-        color = Color(0xFFFFC8A6),
-        radius = h * 0.08f,
-        center = Offset(w * 0.36f, h * 0.34f),
-    )
-    drawRoundRect(
-        color = Color(0xFF253244),
-        topLeft = Offset(w * 0.30f, h * 0.42f),
-        size = Size(w * 0.13f, h * 0.24f),
-        cornerRadius = CornerRadius(5.dp.toPx()),
-    )
-    drawLine(
-        color = Color(0xFFFFC8A6),
-        start = Offset(w * 0.34f, h * 0.66f),
-        end = Offset(w * 0.32f, h * 0.84f),
-        strokeWidth = 4.dp.toPx(),
-        cap = StrokeCap.Round,
-    )
-    drawLine(
-        color = Color(0xFFFFC8A6),
-        start = Offset(w * 0.40f, h * 0.66f),
-        end = Offset(w * 0.43f, h * 0.84f),
-        strokeWidth = 4.dp.toPx(),
-        cap = StrokeCap.Round,
     )
 }
 

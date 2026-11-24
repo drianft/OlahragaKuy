@@ -120,4 +120,10 @@ class UserProfileFieldsTest {
         assertFalse(shouldShowProfileLoadError("PERMISSION_DENIED"))
         assertTrue(shouldShowProfileLoadError("UNAVAILABLE"))
     }
+
+    @Test fun updatedPostCaptionFieldsTrimsAndRejectsBlank() {
+        assertEquals(mapOf("caption" to "Lari pagi"), updatedPostCaptionFields("  Lari pagi  "))
+        assertNull(updatedPostCaptionFields("   "))
+        assertNull(updatedPostCaptionFields(""))
+    }
 }

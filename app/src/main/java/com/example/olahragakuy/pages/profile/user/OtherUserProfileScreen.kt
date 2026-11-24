@@ -45,8 +45,10 @@ fun OtherUserProfileScreen(
     }
     var userPosts by remember(cleanTargetUid, fallbackName) { mutableStateOf<List<UserPost>>(emptyList()) }
     var taggedPosts by remember(cleanTargetUid, fallbackName) { mutableStateOf<List<UserPost>>(emptyList()) }
+    var followersSubCount by remember(cleanTargetUid) { mutableIntStateOf(0) }
     var isFollowing by remember(cleanTargetUid) { mutableStateOf(false) }
     var initialFollowingLoaded by remember(cleanTargetUid) { mutableStateOf<Boolean?>(null) }
+    var preFollowFollowersCount by remember(cleanTargetUid) { mutableStateOf<Int?>(null) }
     var followBusy by remember(cleanTargetUid) { mutableStateOf(false) }
     var loading by remember(cleanTargetUid, fallbackName) { mutableStateOf(true) }
     var loadError by remember(cleanTargetUid) { mutableStateOf(false) }
@@ -72,6 +74,15 @@ fun OtherUserProfileScreen(
                         loadError = false
                     }
                     loading = false
+                }
+
+            registrations += db.collection("users")
+                .document(cleanTargetUid)
+                .collection("followers")
+                .addSnapshotListener { snapshot, _ ->
+                    if (snapshot != null) {
+                        followersSubCount = snapshot.size()
+                    }
                 }
 
             registrations += db.collection("posts")
@@ -109,10 +120,10 @@ fun OtherUserProfileScreen(
                     .document(cleanTargetUid)
                     .addSnapshotListener { doc, _ ->
                         val exists = doc?.exists() == true
-                        if (initialFollowingLoaded == null) {
+                        if (!followBusy) {
                             initialFollowingLoaded = exists
+                            isFollowing = exists
                         }
-                        isFollowing = exists
                     }
             }
         } else {
@@ -147,11 +158,16 @@ fun OtherUserProfileScreen(
         }
     }
 
-    val displayedFollowers = calculateFollowerDisplayCount(
-        baseFollowers = profile.followersCount,
-        wasInitiallyFollowing = initialFollowingLoaded ?: isFollowing,
-        isCurrentlyFollowing = isFollowing,
-    )
+    val liveBaseFollowers = maxOf(profile.followersCount, followersSubCount)
+    val displayedFollowers = if (followBusy && preFollowFollowersCount == liveBaseFollowers) {
+        calculateFollowerDisplayCount(
+            baseFollowers = liveBaseFollowers,
+            wasInitiallyFollowing = initialFollowingLoaded ?: !isFollowing,
+            isCurrentlyFollowing = isFollowing,
+        )
+    } else {
+        liveBaseFollowers
+    }
 
     if (loading) {
         Scaffold(containerColor = KuyNavy) { padding ->
@@ -183,6 +199,7 @@ fun OtherUserProfileScreen(
                     actionError = "Silakan masuk untuk mengikuti akun ini."
                 } else if (!followBusy) {
                     followBusy = true
+                    preFollowFollowersCount = liveBaseFollowers
                     val targetState = !isFollowing
                     isFollowing = targetState
                     toggleFollowUser(
@@ -193,11 +210,14 @@ fun OtherUserProfileScreen(
                         targetPhotoUrl = profile.photoUrl,
                         currentlyFollowing = !targetState,
                         onSuccess = { nowFollowing ->
+                            initialFollowingLoaded = nowFollowing
                             isFollowing = nowFollowing
+                            preFollowFollowersCount = null
                             followBusy = false
                         },
                         onError = { err ->
                             isFollowing = !targetState
+                            preFollowFollowersCount = null
                             followBusy = false
                             actionError = err
                         },
