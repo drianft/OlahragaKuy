@@ -216,7 +216,6 @@ fun RegisterScreen(
                 googleLoading = false
                 when (result) {
                     is GoogleSignInResult.Success -> {
-                        attempted = false
                         password = ""
                         confirmation = ""
                         googleSignedInRole = result.role

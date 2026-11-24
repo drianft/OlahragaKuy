@@ -71,8 +71,7 @@ fun LoginScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var credentialsError by remember { mutableStateOf(false) }
     var serverEmailError by remember { mutableStateOf<String?>(null) }
-    var serverPasswordError by remember { mutableStateOf<String?>(null) }
-    var noticeTitle by remember { mutableStateOf("Belum tersedia") }
+    var noticeTitle by remember { mutableStateOf("Informasi") }
     var notice by remember { mutableStateOf<String?>(null) }
     var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
     var loggedInRole by rememberSaveable { mutableStateOf("member") }
@@ -95,16 +94,11 @@ fun LoginScreen(
             "Masukkan format email yang valid untuk masuk."
         else -> null
     }
-    val passwordError = when {
-        serverPasswordError != null -> serverPasswordError
-        attempted && password.isEmpty() -> "Isi kata sandi terlebih dahulu."
-        else -> null
-    }
+    val passwordError = if (attempted && password.isEmpty()) "Isi kata sandi terlebih dahulu." else null
 
     val submit = {
         attempted = true
         serverEmailError = null
-        serverPasswordError = null
         credentialsError = false
         error = null
         val trimmedEmail = email.trim()
@@ -189,7 +183,6 @@ fun LoginScreen(
             passwordVisible = false
             attempted = false
             serverEmailError = null
-            serverPasswordError = null
             credentialsError = false
             error = null
             googleLoading = true
@@ -198,7 +191,6 @@ fun LoginScreen(
                 googleLoading = false
                 when (result) {
                     is GoogleSignInResult.Success -> {
-                        attempted = false
                         loggedInRole = result.role
                         showSuccessPopup = true
                     }
@@ -322,7 +314,6 @@ fun LoginScreen(
                         {
                             if (!busy) {
                                 password = it.take(128)
-                                serverPasswordError = null
                                 credentialsError = false
                                 error = null
                             }
