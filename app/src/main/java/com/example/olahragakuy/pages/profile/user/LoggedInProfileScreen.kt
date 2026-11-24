@@ -11,6 +11,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.olahragakuy.pages.profile.admin.AdminProfileScreen
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.theme.KuyNavy
 import com.google.firebase.auth.FirebaseAuth
@@ -22,6 +23,8 @@ fun LoggedInProfileScreen(
     onHomeClick: () -> Unit,
     onLogout: () -> Unit,
     onTabSelected: (HomeNavTab) -> Unit = {},
+    initialRole: String = "member",
+    onOpenAdminDashboard: () -> Unit = {},
 ) {
     val auth = remember { FirebaseAuth.getInstance() }
     var user by remember { mutableStateOf(auth.currentUser) }
@@ -44,6 +47,7 @@ fun LoggedInProfileScreen(
         var username by remember { mutableStateOf(fallbackName) }
         var displayName by remember { mutableStateOf(fallbackName) }
         var bio by remember { mutableStateOf("") }
+        var userRole by remember(initialRole) { mutableStateOf(initialRole) }
         var followers by remember { mutableIntStateOf(0) }
         var following by remember { mutableIntStateOf(0) }
         var userPosts by remember { mutableStateOf<List<UserPost>>(emptyList()) }
@@ -73,6 +77,8 @@ fun LoggedInProfileScreen(
                             displayName = (document?.get("displayName") as? String)
                                 ?.takeIf { it.isNotBlank() } ?: loadedUsername
                             bio = (document?.get("bio") as? String) ?: ""
+                            userRole = (document?.getString("role"))
+                                ?.takeIf { it.isNotBlank() } ?: initialRole
                             followers = (document?.get("followersCount") as? Number)?.toInt() ?: 0
                             following = (document?.get("followingCount") as? Number)?.toInt() ?: 0
                             showError = false
@@ -127,31 +133,51 @@ fun LoggedInProfileScreen(
                 }
             }
         } else {
-            ProfileScreen(
-                initialUsername = username,
-                initialDisplayName = displayName,
-                initialBio = bio,
-                followers = followers,
-                following = following,
-                feedPosts = userPosts,
-                gridPosts = userPosts,
-                taggedPosts = taggedPosts,
-                onBack = onBack,
-                onHomeClick = onHomeClick,
-                onTabSelected = onTabSelected,
-                onLogout = onLogout,
-                onProfileSaved = { updatedUsername, updatedBio ->
-                    username = updatedUsername
-                    displayName = updatedUsername
-                    bio = updatedBio
-                    saveUserProfileToFirestore(
-                        user = currentUser,
-                        username = updatedUsername,
-                        bio = updatedBio,
-                        onError = { saveError = it },
-                    )
-                },
-            )
+            val handleProfileSaved: (String, String) -> Unit = { updatedUsername, updatedBio ->
+                username = updatedUsername
+                displayName = updatedUsername
+                bio = updatedBio
+                saveUserProfileToFirestore(
+                    user = currentUser,
+                    username = updatedUsername,
+                    bio = updatedBio,
+                    onError = { saveError = it },
+                )
+            }
+            if (userRole.equals("admin", ignoreCase = true)) {
+                AdminProfileScreen(
+                    initialUsername = username,
+                    initialDisplayName = displayName,
+                    initialBio = bio,
+                    followers = followers,
+                    following = following,
+                    feedPosts = userPosts,
+                    gridPosts = userPosts,
+                    taggedPosts = taggedPosts,
+                    onBack = onBack,
+                    onHomeClick = onHomeClick,
+                    onTabSelected = onTabSelected,
+                    onLogout = onLogout,
+                    onProfileSaved = handleProfileSaved,
+                    onOpenDashboardReport = onOpenAdminDashboard,
+                )
+            } else {
+                ProfileScreen(
+                    initialUsername = username,
+                    initialDisplayName = displayName,
+                    initialBio = bio,
+                    followers = followers,
+                    following = following,
+                    feedPosts = userPosts,
+                    gridPosts = userPosts,
+                    taggedPosts = taggedPosts,
+                    onBack = onBack,
+                    onHomeClick = onHomeClick,
+                    onTabSelected = onTabSelected,
+                    onLogout = onLogout,
+                    onProfileSaved = handleProfileSaved,
+                )
+            }
         }
 
         if (showError) {

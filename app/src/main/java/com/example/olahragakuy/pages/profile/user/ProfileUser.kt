@@ -30,6 +30,8 @@ fun ProfileScreen(
     onHomeClick: () -> Unit = {},
     onTabSelected: (HomeNavTab) -> Unit = {},
     onProfileSaved: (username: String, bio: String) -> Unit = { _, _ -> },
+    showAdminDashboard: Boolean = false,
+    onAdminDashboardClick: () -> Unit = {},
 ) {
     var state by rememberSaveable(stateSaver = ProfileUiState.Saver) {
         mutableStateOf(
@@ -86,7 +88,9 @@ fun ProfileScreen(
                     onBack = onBack,
                     onMenu = { state = state.openSettings() },
                     onEditProfile = { state = state.openEdit() },
-                    onShareProfile = {}
+                    onShareProfile = {},
+                    showAdminDashboard = showAdminDashboard,
+                    onAdminDashboardClick = onAdminDashboardClick,
                 )
             }
             val contentModifier = Modifier.fillMaxSize().padding(padding)

@@ -15,10 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.olahragakuy.R
 
 @Composable
 internal fun ProfileHeaderSection(
@@ -36,6 +38,8 @@ internal fun ProfileHeaderSection(
     onShareProfile: () -> Unit,
     photoUrl: String? = null,
     showMenu: Boolean = true,
+    showAdminDashboard: Boolean = false,
+    onAdminDashboardClick: () -> Unit = {},
     primaryActionLabel: String = "Edit Profil",
     secondaryActionLabel: String = "Bagikan Profil",
     primaryActionSelected: Boolean = false,
@@ -54,6 +58,8 @@ internal fun ProfileHeaderSection(
             onBack = onBack,
             onMenu = onMenu,
             showMenu = showMenu,
+            showAdminDashboard = showAdminDashboard,
+            onAdminDashboardClick = onAdminDashboardClick,
         )
         Spacer(Modifier.height(16.dp))
 
@@ -177,6 +183,8 @@ private fun TopBar(
     onBack: () -> Unit,
     onMenu: () -> Unit,
     showMenu: Boolean = true,
+    showAdminDashboard: Boolean = false,
+    onAdminDashboardClick: () -> Unit = {},
 ) {
     Row(
         modifier = Modifier
@@ -201,6 +209,19 @@ private fun TopBar(
             fontSize = 20.sp,
             modifier = Modifier.weight(1f),
         )
+        if (showAdminDashboard) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_admin_dashboard_report),
+                contentDescription = "Dashboard Laporan",
+                tint = TextWhite,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clickable(onClick = onAdminDashboardClick),
+            )
+            if (showMenu) {
+                Spacer(Modifier.width(14.dp))
+            }
+        }
         if (showMenu) {
             Icon(
                 imageVector = Icons.Default.Menu,

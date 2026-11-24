@@ -33,6 +33,7 @@ import com.example.olahragakuy.pages.posts.SearchPostScreen
 import com.example.olahragakuy.pages.posts.currentUserOrNull
 import com.example.olahragakuy.pages.posts.ensureDirectChatRoom
 import com.example.olahragakuy.pages.posts.resolveDisplayName
+import com.example.olahragakuy.pages.profile.admin.AdminDashboardReportScreen
 import com.example.olahragakuy.pages.profile.user.LoggedInProfileScreen
 import com.example.olahragakuy.pages.profile.user.OtherUserProfileScreen
 import com.example.olahragakuy.pages.training.TrainingHomeScreen
@@ -312,13 +313,25 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                 },
                 onHomeClick = { navigateToTab(HomeNavTab.KOMUNITAS) },
                 onTabSelected = navigateToTab,
+                initialRole = currentUserRole,
+                onOpenAdminDashboard = {
+                    navController.navigate("admin_dashboard_report") {
+                        launchSingleTop = true
+                    }
+                },
                 onLogout = {
+                    currentUserRole = "member"
                     FirebaseAuth.getInstance().signOut()
                     navController.navigate("opening") {
                         popUpTo(0) { inclusive = true }
                         launchSingleTop = true
                     }
                 },
+            )
+        }
+        composable("admin_dashboard_report") {
+            AdminDashboardReportScreen(
+                onBack = { navController.popBackStack() },
             )
         }
         composable("create_post") {
