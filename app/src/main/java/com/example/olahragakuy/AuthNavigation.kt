@@ -388,6 +388,11 @@ fun AuthNavigation(
                         launchSingleTop = true
                     }
                 },
+                onWaterReminderClick = {
+                    navController.navigate("drink_reminder") {
+                        launchSingleTop = true
+                    }
+                },
             )
         }
         composable("workout_rumahan") {

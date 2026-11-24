@@ -123,6 +123,7 @@ fun TrainingHomeScreen(
     onTabSelected: (HomeNavTab) -> Unit = {},
     onRoutineClick: (TrainingRoutineType) -> Unit = {},
     onHomeWorkoutClick: (() -> Unit)? = null,
+    onWaterReminderClick: (() -> Unit)? = null,
 ) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -169,10 +170,16 @@ fun TrainingHomeScreen(
                         routine = routine,
                         onClick = {
                             onRoutineClick(routine.type)
-                            if (routine.type == TrainingRoutineType.HOME_WORKOUT && onHomeWorkoutClick != null) {
-                                onHomeWorkoutClick()
-                            } else {
-                                notice = "Fitur ${routine.title} segera hadir."
+                            when {
+                                routine.type == TrainingRoutineType.HOME_WORKOUT && onHomeWorkoutClick != null -> {
+                                    onHomeWorkoutClick()
+                                }
+                                routine.type == TrainingRoutineType.WATER_REMINDER && onWaterReminderClick != null -> {
+                                    onWaterReminderClick()
+                                }
+                                else -> {
+                                    notice = "Fitur ${routine.title} segera hadir."
+                                }
                             }
                         },
                     )
