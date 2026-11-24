@@ -46,10 +46,39 @@ fun AdminProfileScreen(
     onOpenDashboardReport: (() -> Unit)? = null,
 ) {
     var showDashboardReport by rememberSaveable { mutableStateOf(false) }
+    var deletedPostKeys by rememberSaveable { mutableStateOf(listOf<String>()) }
+
+    val visibleFeedPosts = feedPosts.filterNot { post ->
+        post.documentId in deletedPostKeys || post.caption.lowercase() in deletedPostKeys
+    }
+    val visibleGridPosts = gridPosts.filterNot { post ->
+        post.documentId in deletedPostKeys || post.caption.lowercase() in deletedPostKeys
+    }
 
     if (showDashboardReport) {
         AdminDashboardReportScreen(
             onBack = { showDashboardReport = false },
+            onDeleteReportedPost = { report ->
+                val keysToAdd = buildList {
+                    report.postDocumentId?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    if (report.reportedUsername.equals(initialUsername, ignoreCase = true) &&
+                        report.contentPreview.isNotBlank()
+                    ) {
+                        add(report.contentPreview.lowercase())
+                    }
+                }
+                if (keysToAdd.isNotEmpty()) {
+                    deletedPostKeys = deletedPostKeys + keysToAdd
+                }
+                val matchingPost = visibleFeedPosts.firstOrNull { post ->
+                    (report.postDocumentId != null && post.documentId == report.postDocumentId) ||
+                        (report.reportedUsername.equals(initialUsername, ignoreCase = true) &&
+                            post.caption.equals(report.contentPreview, ignoreCase = true))
+                }
+                if (matchingPost != null) {
+                    onDeletePost?.invoke(matchingPost)
+                }
+            },
         )
     } else {
         ProfileScreen(
@@ -59,8 +88,8 @@ fun AdminProfileScreen(
             following = following,
             initialBio = initialBio,
             initialTab = initialTab,
-            feedPosts = feedPosts,
-            gridPosts = gridPosts,
+            feedPosts = visibleFeedPosts,
+            gridPosts = visibleGridPosts,
             taggedPosts = taggedPosts,
             onBack = onBack,
             onLogout = onLogout,

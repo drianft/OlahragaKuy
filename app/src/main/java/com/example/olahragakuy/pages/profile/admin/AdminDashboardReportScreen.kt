@@ -42,19 +42,17 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,6 +98,12 @@ data class AdminReportItem(
     val withinLastHour: Boolean = false,
     val thumbnailUrl: String? = null,
     val contentPreview: String = "",
+    val postTime: String = "2 jam lalu",
+    val likesCount: Int = 57,
+    val commentsCount: Int = 4,
+    val sharesCount: Int = 8,
+    val reportDescription: String = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis...",
+    val postDocumentId: String? = null,
 )
 
 data class AdminReportFilterState(
@@ -199,13 +203,15 @@ private val ReportDividerColor = Color(0xFF10243C)
 /**
  * Halaman Dashboard Report khusus Admin (`admin-dashboardreport`).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboardReportScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     reports: List<AdminReportItem> = SampleAdminReports,
     onReportClick: ((AdminReportItem) -> Unit)? = null,
+    onIgnoreReport: (AdminReportItem) -> Unit = {},
+    onDeleteReportedPost: (AdminReportItem) -> Unit = {},
+    onSendWarning: (report: AdminReportItem, title: String, description: String) -> Unit = { _, _, _ -> },
 ) {
     val focusManager = LocalFocusManager.current
     val availableCategories = remember(reports) {
@@ -224,11 +230,56 @@ fun AdminDashboardReportScreen(
     }
     var showFilterSheet by remember { mutableStateOf(false) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
-    var selectedReport by remember { mutableStateOf<AdminReportItem?>(null) }
+    var selectedReportId by rememberSaveable { mutableStateOf<String?>(null) }
+    var dismissedReportIds by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var feedbackMessage by remember { mutableStateOf<String?>(null) }
 
-    val filteredReports = remember(reports, searchQuery, filterState) {
+    val activeReports = remember(reports, dismissedReportIds) {
+        val dismissedSet = dismissedReportIds.toSet()
+        reports.filterNot { it.id in dismissedSet }
+    }
+
+    val selectedReport = remember(activeReports, selectedReportId) {
+        selectedReportId?.let { id -> activeReports.firstOrNull { it.id == id } }
+    }
+
+    if (selectedReport != null) {
+        AdminReportDetailScreen(
+            report = selectedReport,
+            onBack = { selectedReportId = null },
+            onIgnore = { report ->
+                dismissedReportIds = dismissedReportIds + report.id
+                selectedReportId = null
+                feedbackMessage = "Laporan terhadap @${report.reportedUsername} diabaikan"
+                onIgnoreReport(report)
+            },
+            onDeletePost = { report ->
+                dismissedReportIds = dismissedReportIds + report.id
+                selectedReportId = null
+                feedbackMessage = "Postingan @${report.reportedUsername} berhasil dihapus"
+                onDeleteReportedPost(report)
+            },
+            onSendWarning = { report, title, description ->
+                dismissedReportIds = dismissedReportIds + report.id
+                selectedReportId = null
+                feedbackMessage = "Peringatan \"$title\" dikirim ke @${report.reportedUsername}"
+                onSendWarning(report, title, description)
+            },
+            modifier = modifier,
+        )
+        return
+    }
+
+    LaunchedEffect(feedbackMessage) {
+        if (feedbackMessage != null) {
+            kotlinx.coroutines.delay(2500L)
+            feedbackMessage = null
+        }
+    }
+
+    val filteredReports = remember(activeReports, searchQuery, filterState) {
         filterAdminReports(
-            reports = reports,
+            reports = activeReports,
             query = searchQuery,
             filter = filterState,
         )
@@ -420,7 +471,7 @@ fun AdminDashboardReportScreen(
                                 if (onReportClick != null) {
                                     onReportClick(report)
                                 } else {
-                                    selectedReport = report
+                                    selectedReportId = report.id
                                 }
                             },
                         )
@@ -479,45 +530,32 @@ fun AdminDashboardReportScreen(
                 }
             }
         }
-    }
 
-    selectedReport?.let { report ->
-        AlertDialog(
-            onDismissRequest = { selectedReport = null },
-            containerColor = HomeBlue,
-            titleContentColor = Color.White,
-            textContentColor = HomeText,
-            title = {
+        // Banner status singkat setelah tindakan (Abaikan / Hapus / Peringatan)
+        AnimatedVisibility(
+            visible = feedbackMessage != null,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = HomeBlue,
+                border = BorderStroke(1.dp, HomeOrange),
+                shadowElevation = 8.dp,
+            ) {
                 Text(
-                    text = "Detail Laporan (${report.type.label})",
+                    text = feedbackMessage.orEmpty(),
+                    color = Color.White,
                     fontFamily = Poppins,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
+                    fontSize = 12.5.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Akun Dilaporkan: @${report.reportedUsername}", fontFamily = Poppins, fontSize = 13.sp)
-                    Text("Dilaporkan Oleh: @${report.reporterUsername}", fontFamily = Poppins, fontSize = 13.sp)
-                    Text("Jenis Laporan: ${report.reportCategory}", fontFamily = Poppins, fontSize = 13.sp)
-                    Text("Tanggal Laporan: ${report.reportDate}", fontFamily = Poppins, fontSize = 13.sp)
-                    if (report.contentPreview.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Cuplikan: \"${report.contentPreview}\"",
-                            fontFamily = Poppins,
-                            fontSize = 12.sp,
-                            color = HomeText.copy(alpha = 0.85f),
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedReport = null }) {
-                    Text("Tutup", color = HomeOrange, fontFamily = Poppins, fontWeight = FontWeight.SemiBold)
-                }
-            },
-        )
+            }
+        }
     }
 }
 }
@@ -942,7 +980,7 @@ private fun ReportThumbnail(
 }
 
 @Composable
-private fun ReportThumbnailFallback(type: AdminReportType) {
+internal fun ReportThumbnailFallback(type: AdminReportType) {
     val icon = when (type) {
         AdminReportType.POST -> Icons.Default.FitnessCenter
         AdminReportType.COMMENT -> Icons.Default.ChatBubbleOutline
@@ -961,18 +999,15 @@ private fun ReportThumbnailFallback(type: AdminReportType) {
 @Composable
 private fun AdminDashboardReportPreview() {
     OlahragaKuyTheme {
-        var backPressedCount by remember { mutableStateOf(0) }
-        Column {
-            if (backPressedCount > 0) {
-                Text(
-                    text = "Kembali ditekan: $backPressedCount kali",
-                    color = HomeOrange,
-                    fontFamily = Poppins,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(8.dp),
-                )
-            }
-            AdminDashboardReportScreen(onBack = { backPressedCount++ })
+        var showDashboard by remember { mutableStateOf(true) }
+        if (showDashboard) {
+            AdminDashboardReportScreen(
+                onBack = { showDashboard = false },
+            )
+        } else {
+            AdminProfileScreen(
+                onOpenDashboardReport = { showDashboard = true },
+            )
         }
     }
 }
