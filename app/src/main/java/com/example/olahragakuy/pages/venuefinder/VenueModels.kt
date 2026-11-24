@@ -69,6 +69,84 @@ data class ShareRecipient(
     val participantNames: List<String> = emptyList(),
 )
 
+/** Opsi filter jenis olahraga pada layar Venue Finder beserta sinonim umumnya. */
+enum class VenueSportFilter(
+    val label: String,
+    val keywords: List<String>,
+) {
+    ALL(
+        label = "Semua",
+        keywords = emptyList(),
+    ),
+    FOOTBALL(
+        label = "Sepak Bola",
+        keywords = listOf(
+            "sepak bola",
+            "sepakbola",
+            "futsal",
+            "football",
+            "soccer",
+            "mini soccer",
+            "minisoccer",
+        ),
+    ),
+    BADMINTON(
+        label = "Badminton",
+        keywords = listOf(
+            "badminton",
+            "bulu tangkis",
+            "bulutangkis",
+        ),
+    ),
+    GYM(
+        label = "Gym",
+        keywords = listOf(
+            "gym",
+            "fitness",
+            "fitnes",
+            "kebugaran",
+            "workout",
+        ),
+    ),
+    TENNIS(
+        label = "Tennis",
+        keywords = listOf(
+            "tennis",
+            "tenis",
+        ),
+    ),
+    BASKETBALL(
+        label = "Basket",
+        keywords = listOf(
+            "basket",
+            "basketball",
+            "bola basket",
+        ),
+    ),
+    JOGGING(
+        label = "Jogging",
+        keywords = listOf(
+            "jogging",
+            "joging",
+            "lari",
+            "running",
+            "atletik",
+        ),
+    ),
+}
+
+/** Opsi filter radius jarak (meter) dari titik lokasi pengguna aktif / fallback USU Medan. */
+enum class VenueRadiusFilter(
+    val label: String,
+    val maxDistanceMeters: Double?,
+) {
+    ALL(label = "Semua", maxDistanceMeters = null),
+    KM_1(label = "1 km", maxDistanceMeters = 1_000.0),
+    KM_3(label = "3 km", maxDistanceMeters = 3_000.0),
+    KM_5(label = "5 km", maxDistanceMeters = 5_000.0),
+    KM_10(label = "10 km", maxDistanceMeters = 10_000.0),
+}
+
 /** Keempat tampilan overlay utama pada layar Venue Finder (State 1 sampai State 4). */
 enum class VenueFinderMode {
     DEFAULT,
@@ -81,6 +159,8 @@ enum class VenueFinderMode {
 data class VenueFinderUiState(
     val venues: List<VenueUiModel> = emptyList(),
     val searchQuery: String = "",
+    val selectedSportFilter: VenueSportFilter = VenueSportFilter.ALL,
+    val selectedRadiusFilter: VenueRadiusFilter = VenueRadiusFilter.ALL,
     val mode: VenueFinderMode = VenueFinderMode.DEFAULT,
     val selectedVenue: VenueUiModel? = null,
     val userLocation: GeoCoordinate = DefaultUsuCoordinate,

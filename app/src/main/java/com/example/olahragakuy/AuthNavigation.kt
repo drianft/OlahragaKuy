@@ -39,6 +39,7 @@ import com.example.olahragakuy.pages.profile.user.OtherUserProfileScreen
 import com.example.olahragakuy.pages.training.TrainingHomeScreen
 import com.example.olahragakuy.pages.training.TrainingRoutineType
 import com.example.olahragakuy.pages.venuefinder.VenueChatBridge
+import com.example.olahragakuy.pages.venuefinder.VenueChatTarget
 import com.example.olahragakuy.pages.venuefinder.VenueFinderScreen
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.theme.KuyNavy
@@ -181,6 +182,13 @@ fun AuthNavigation(
         }
     }
 
+    val navigateToVenueInviteChat: (VenueChatTarget) -> Unit = { target ->
+        VenueChatBridge.setPendingTarget(target)
+        navController.navigate("chat?returnDirectlyOnBack=true") {
+            launchSingleTop = true
+        }
+    }
+
     val mainTabRoutes = remember { setOf("home", "lokasi", "latihan", "profile") }
 
     NavHost(
@@ -286,7 +294,8 @@ fun AuthNavigation(
                     navController.navigate("notifications") { launchSingleTop = true }
                 },
                 onChatClick = {
-                    navController.navigate("chat") { launchSingleTop = true }
+                    VenueChatBridge.setPendingTarget(null)
+                    navController.navigate("chat?returnDirectlyOnBack=false") { launchSingleTop = true }
                 },
                 onTabSelected = navigateToTab,
                 onUserProfileClick = navigateToUserProfile,
@@ -299,12 +308,8 @@ fun AuthNavigation(
                         navigateToTab(HomeNavTab.KOMUNITAS)
                     }
                 },
-                onNavigateToChat = { target ->
-                    VenueChatBridge.setPendingTarget(target)
-                    navController.navigate("chat") {
-                        launchSingleTop = true
-                    }
-                },
+                onTabSelected = navigateToTab,
+                onNavigateToChat = navigateToVenueInviteChat,
             )
         }
         composable(
@@ -317,12 +322,8 @@ fun AuthNavigation(
             VenueFinderScreen(
                 onBack = { navController.popBackStack() },
                 initialFocusedVenueName = venueName,
-                onNavigateToChat = { target ->
-                    VenueChatBridge.setPendingTarget(target)
-                    navController.navigate("chat") {
-                        launchSingleTop = true
-                    }
-                },
+                onTabSelected = navigateToTab,
+                onNavigateToChat = navigateToVenueInviteChat,
             )
         }
         composable("latihan") {
@@ -382,9 +383,19 @@ fun AuthNavigation(
                 onUserProfileClick = navigateToUserProfile,
             )
         }
-        composable("chat") {
+        composable(
+            route = "chat?returnDirectlyOnBack={returnDirectlyOnBack}",
+            arguments = listOf(
+                navArgument("returnDirectlyOnBack") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+            ),
+        ) { entry ->
+            val returnDirectlyOnBack = entry.arguments?.getBoolean("returnDirectlyOnBack") ?: false
             ChatScreen(
                 onBack = { navController.popBackStack() },
+                returnDirectlyOnBack = returnDirectlyOnBack,
                 onOpenVenueFinder = navigateToVenueFinder,
             )
         }
