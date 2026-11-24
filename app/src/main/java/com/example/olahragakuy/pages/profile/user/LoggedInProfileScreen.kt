@@ -45,7 +45,9 @@ fun LoggedInProfileScreen(
         var displayName by remember { mutableStateOf(fallbackName) }
         var bio by remember { mutableStateOf("") }
         var followers by remember { mutableIntStateOf(0) }
+        var followersSubCount by remember { mutableIntStateOf(0) }
         var following by remember { mutableIntStateOf(0) }
+        var followingSubCount by remember { mutableIntStateOf(0) }
         var userPosts by remember { mutableStateOf<List<UserPost>>(emptyList()) }
         var taggedPosts by remember { mutableStateOf<List<UserPost>>(emptyList()) }
         var loading by remember { mutableStateOf(true) }
@@ -97,15 +99,21 @@ fun LoggedInProfileScreen(
                     }
                 }
 
+            val followersRegistration = db.collection("users")
+                .document(currentUser.uid)
+                .collection("followers")
+                .addSnapshotListener { snapshot, _ ->
+                    if (auth.currentUser?.uid == currentUser.uid && snapshot != null) {
+                        followersSubCount = snapshot.size()
+                    }
+                }
+
             val followingRegistration = db.collection("users")
                 .document(currentUser.uid)
                 .collection("following")
                 .addSnapshotListener { snapshot, _ ->
                     if (auth.currentUser?.uid == currentUser.uid && snapshot != null) {
-                        val subCount = snapshot.size()
-                        if (subCount > following) {
-                            following = subCount
-                        }
+                        followingSubCount = snapshot.size()
                     }
                 }
 
@@ -113,6 +121,7 @@ fun LoggedInProfileScreen(
                 userRegistration.remove()
                 postsRegistration.remove()
                 taggedRegistration.remove()
+                followersRegistration.remove()
                 followingRegistration.remove()
             }
         }
@@ -131,8 +140,8 @@ fun LoggedInProfileScreen(
                 initialUsername = username,
                 initialDisplayName = displayName,
                 initialBio = bio,
-                followers = followers,
-                following = following,
+                followers = maxOf(followers, followersSubCount),
+                following = maxOf(following, followingSubCount),
                 feedPosts = userPosts,
                 gridPosts = userPosts,
                 taggedPosts = taggedPosts,
@@ -149,6 +158,32 @@ fun LoggedInProfileScreen(
                         username = updatedUsername,
                         bio = updatedBio,
                         onError = { saveError = it },
+                    )
+                },
+                onDeletePost = { post ->
+                    val previousPosts = userPosts
+                    userPosts = userPosts.filterNot { it.documentId == post.documentId }
+                    deleteUserPostFromFirestore(
+                        user = currentUser,
+                        documentId = post.documentId,
+                        onError = { err ->
+                            userPosts = previousPosts
+                            saveError = err
+                        },
+                    )
+                },
+                onEditPost = { post, newCaption ->
+                    val previousPosts = userPosts
+                    userPosts = userPosts.map {
+                        if (it.documentId == post.documentId) it.copy(caption = newCaption) else it
+                    }
+                    updateUserPostCaptionInFirestore(
+                        documentId = post.documentId,
+                        newCaption = newCaption,
+                        onError = { err ->
+                            userPosts = previousPosts
+                            saveError = err
+                        },
                     )
                 },
             )
@@ -174,7 +209,7 @@ fun LoggedInProfileScreen(
         saveError?.let { errMsg ->
             AlertDialog(
                 onDismissRequest = { saveError = null },
-                title = { Text("Gagal menyimpan profil") },
+                title = { Text("Gagal memperbarui data") },
                 text = { Text(errMsg) },
                 confirmButton = {
                     TextButton(onClick = { saveError = null }) { Text("Mengerti") }
