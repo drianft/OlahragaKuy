@@ -123,6 +123,7 @@ fun TrainingHomeScreen(
     onTabSelected: (HomeNavTab) -> Unit = {},
     onRoutineClick: (TrainingRoutineType) -> Unit = {},
     onHomeWorkoutClick: (() -> Unit)? = null,
+    onStepTrackerClick: (() -> Unit)? = null,
     onWaterReminderClick: (() -> Unit)? = null,
 ) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
@@ -173,6 +174,9 @@ fun TrainingHomeScreen(
                             when {
                                 routine.type == TrainingRoutineType.HOME_WORKOUT && onHomeWorkoutClick != null -> {
                                     onHomeWorkoutClick()
+                                }
+                                routine.type == TrainingRoutineType.STEP_TRACKER && onStepTrackerClick != null -> {
+                                    onStepTrackerClick()
                                 }
                                 routine.type == TrainingRoutineType.WATER_REMINDER && onWaterReminderClick != null -> {
                                     onWaterReminderClick()
