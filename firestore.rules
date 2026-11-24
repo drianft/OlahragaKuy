@@ -42,6 +42,26 @@ rules_version = '2';
 //   - lastCommentId: string (optional, 20 chars)
 //   - Share: int (optional, >= 0)
 //   - createdAt: timestamp (required, == request.time, immutable)
+//
+// Collection: chats/{chatId}
+// Fields:
+//   - name: string (required, 1..100 chars)
+//   - isGroup: bool (required)
+//   - statusOrMembers, lastMessage, dateLabel: string (optional)
+//   - participantIds, participantNames: list<string> (optional)
+//   - updatedAt: timestamp (optional)
+//
+// Subcollection: chats/{chatId}/messages/{messageId}
+// Fields:
+//   - senderId: string (required, == request.auth.uid)
+//   - senderName: string (required, 1..100 chars)
+//   - text: string (required, 1..2000 chars)
+//   - timeText: string (optional, <= 32 chars)
+//   - venueInvite: map (optional, must contain non-blank title string)
+//   - createdAt: timestamp (required)
+//
+// Collection: venues/{venueId}
+// Read-only for authenticated users.
 // ===============================================================
 
 service cloud.firestore {
@@ -100,6 +120,25 @@ service cloud.firestore {
         && (!('taggedFriends' in data) || (data.taggedFriends is list && data.taggedFriends.size() <= 50))
         && data.createdAt is timestamp
         && data.createdAt == request.time;
+    }
+
+    function isValidVenueInvite(invite) {
+      return invite is map
+        && invite.keys().hasAll(['title'])
+        && invite.keys().hasOnly([
+          'venueId', 'title', 'sport', 'description',
+          'imageUrl', 'latitude', 'longitude'
+        ])
+        && invite.title is string
+        && invite.title.size() > 0
+        && invite.title.size() <= 200
+        && invite.title.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && (!('venueId' in invite) || (invite.venueId is string && invite.venueId.size() <= 128))
+        && (!('sport' in invite) || (invite.sport is string && invite.sport.size() <= 100))
+        && (!('description' in invite) || (invite.description is string && invite.description.size() <= 1000))
+        && (!('imageUrl' in invite) || (invite.imageUrl is string && invite.imageUrl.size() <= 1000))
+        && (!('latitude' in invite) || (invite.latitude is number && invite.latitude >= -90 && invite.latitude <= 90))
+        && (!('longitude' in invite) || (invite.longitude is number && invite.longitude >= -180 && invite.longitude <= 180));
     }
 
     match /users/{userId} {
@@ -227,16 +266,25 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated()
           && hasRequiredFields(['senderId', 'senderName', 'text', 'createdAt'])
-          && hasOnlyAllowedFields(['senderId', 'senderName', 'text', 'timeText', 'createdAt'])
+          && hasOnlyAllowedFields(['senderId', 'senderName', 'text', 'timeText', 'venueInvite', 'createdAt'])
+          && request.resource.data.senderId is string
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.senderName is string
           && request.resource.data.senderName.size() > 0
           && request.resource.data.senderName.size() <= 100
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+          && request.resource.data.text.size() <= 2000
+          && (!('timeText' in request.resource.data) || (request.resource.data.timeText is string && request.resource.data.timeText.size() <= 32))
+          && (!('venueInvite' in request.resource.data) || isValidVenueInvite(request.resource.data.venueInvite))
+          && request.resource.data.createdAt is timestamp;
         allow update, delete: if false;
       }
+    }
+
+    match /venues/{venueId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
   }
 }

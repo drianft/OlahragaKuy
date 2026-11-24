@@ -1,15 +1,15 @@
 package com.example.olahragakuy.pages.venuefinder
 
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.ContextWrapper
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
-import android.graphics.DashPathEffect
-import android.graphics.Paint
+import android.content.res.Configuration
+import android.view.View
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,9 +32,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,29 +73,72 @@ import com.example.olahragakuy.ui.theme.HomeOrange
 import com.example.olahragakuy.ui.theme.HomeText
 import com.example.olahragakuy.ui.theme.KuyNavy
 import com.example.olahragakuy.ui.theme.KuyOrange
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.BoundingBox
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.CustomZoomButtonsController
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Polyline
-import java.io.File
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.BackgroundLayer
+import org.maplibre.android.style.layers.FillLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
+import java.util.Locale
+import kotlin.math.roundToInt
 
-private const val DefaultMapZoom = 16.0
-private const val FocusVenueZoom = 17.0
-private const val MinMapZoom = 5.0
+private const val OpenFreeMapFiordStyleUri = "https://tiles.openfreemap.org/styles/fiord"
+
+private const val RouteSourceId = "venue-route-source"
+private const val RouteCasingLayerId = "venue-route-casing-layer"
+private const val RouteSolidLayerId = "venue-route-solid-layer"
+private const val RouteDashedLayerId = "venue-route-dashed-layer"
+
+private val RouteLayerIds = setOf(
+    RouteCasingLayerId,
+    RouteSolidLayerId,
+    RouteDashedLayerId,
+)
+
+// Palet dark navy peta agar menyatu dengan tema aplikasi namun tetap sedikit lebih terang dari kartu (#0D1B2A).
+private val MapBackgroundColor = Color(0xFF142133)
+private val MapWaterColor = Color(0xFF0B1524)
+private val MapParkColor = Color(0xFF142A36)
+private val MapLandColor = Color(0xFF17263A)
+private val MapLandAccentColor = Color(0xFF1A2B42)
+private val MapRoadCasingColor = Color(0xFF0E1928)
+private val MapMajorRoadColor = Color(0xFF314B6E)
+private val MapMinorRoadColor = Color(0xFF233752)
+private val MapBoundaryRailColor = Color(0xFF263B57)
+private val MapLabelTextColor = Color(0xFF8EA6C2)
+private val MapLabelHaloColor = Color(0xFF0E1A2A)
+
+private const val DefaultMapZoom = 15.9
+private const val RecenterUserZoom = 15.9
+private const val FocusVenueZoom = 16.8
+private const val MinMapZoom = 4.0
 private const val MaxMapZoom = 19.0
-private const val FocusAnimationMs = 650L
+private const val FocusAnimationMs = 650
 
 private val VenueCardWidth = 224.dp
 private val MarkerDotSize = 12.dp
-private val RouteFocusPadding = 96.dp
+private val RouteFocusHorizontalPadding = 72.dp
+private val RouteFocusTopPadding = 128.dp
+private val RouteFocusBottomPadding = 220.dp
 
 /**
- * Peta OSMDroid bergaya gelap untuk layar Venue Finder.
+ * Peta vector MapLibre bergaya dark navy (OpenFreeMap Fiord) untuk layar Venue Finder.
  *
- * Menampilkan pin lokasi pengguna, kartu marker venue yang mengikuti koordinat layar saat
+ * Menampilkan pin lokasi pengguna, kartu marker venue yang mengikuti proyeksi koordinat layar saat
  * peta digeser/di-zoom, serta garis rute oranye ketika [mode] berada di [VenueFinderMode.ROUTE].
  * Di Compose Preview (inspection mode) peta diganti placeholder agar preview tetap aman.
  */
@@ -107,6 +154,9 @@ fun VenueMapView(
     modifier: Modifier = Modifier,
     userName: String = "Kamu",
     userPhotoUrl: String? = null,
+    initialUserCenterCoordinate: GeoCoordinate? = null,
+    recenterToUserRequest: Int = 0,
+    onUserLocationClick: () -> Unit = {},
 ) {
     if (LocalInspectionMode.current) {
         VenueMapInspectionPlaceholder(
@@ -121,83 +171,263 @@ fun VenueMapView(
 
     val context = LocalContext.current
     val density = LocalDensity.current
-    val mapView = remember(context) {
-        configureOsmdroid(context)
-        createDarkMapView(context, selectedVenue?.coordinate ?: userLocation)
+    val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
+    val initialCameraCoordinate = remember {
+        selectedVenue?.coordinate ?: initialUserCenterCoordinate ?: userLocation
     }
+    val initialCameraZoom = remember {
+        if (selectedVenue != null) FocusVenueZoom else DefaultMapZoom
+    }
+
+    val mapView = remember(context) {
+        MapLibre.getInstance(context)
+        createMapLibreMapView(
+            context = context,
+            initialCenter = initialCameraCoordinate,
+            initialZoom = initialCameraZoom,
+        )
+    }
+
+    var mapLibreMap by remember(mapView) { mutableStateOf<MapLibreMap?>(null) }
+    var loadedStyle by remember(mapView) { mutableStateOf<Style?>(null) }
     val cameraTick = remember(mapView) { mutableIntStateOf(0) }
     val readCameraTick = remember(cameraTick) { { cameraTick.intValue } }
-    val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
 
-    // Sinkronkan lifecycle MapView tanpa LocalLifecycleOwner.
+    // Kelola lifecycle penuh MapView (onCreate..onDestroy & onLowMemory) dari LifecycleOwner context.
     DisposableEffect(mapView, lifecycleOwner) {
-        mapView.onCameraFrame = { cameraTick.intValue++ }
+        var isCreated = false
+        var isStarted = false
+        var isResumed = false
+        var isDestroyed = false
+
+        fun moveToCreated() {
+            if (!isCreated && !isDestroyed) {
+                mapView.onCreate(null)
+                isCreated = true
+            }
+        }
+
+        fun moveToStarted() {
+            moveToCreated()
+            if (!isStarted && !isDestroyed) {
+                mapView.onStart()
+                isStarted = true
+            }
+        }
+
+        fun moveToResumed() {
+            moveToStarted()
+            if (!isResumed && !isDestroyed) {
+                mapView.onResume()
+                isResumed = true
+            }
+        }
+
+        fun moveToPaused() {
+            if (isResumed) {
+                mapView.onPause()
+                isResumed = false
+            }
+        }
+
+        fun moveToStopped() {
+            moveToPaused()
+            if (isStarted) {
+                mapView.onStop()
+                isStarted = false
+            }
+        }
+
+        fun moveToDestroyed() {
+            moveToStopped()
+            if (isCreated && !isDestroyed) {
+                mapView.onDestroy()
+                isDestroyed = true
+            }
+        }
+
+        val cameraMoveListener = MapLibreMap.OnCameraMoveListener {
+            cameraTick.intValue++
+        }
+        val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
+            cameraTick.intValue++
+        }
+        val layoutChangeListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            cameraTick.intValue++
+        }
+        mapView.addOnLayoutChangeListener(layoutChangeListener)
+
         val lifecycle = lifecycleOwner?.lifecycle
-        val observer = LifecycleEventObserver { _, event ->
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                Lifecycle.Event.ON_CREATE -> moveToCreated()
+                Lifecycle.Event.ON_START -> moveToStarted()
+                Lifecycle.Event.ON_RESUME -> moveToResumed()
+                Lifecycle.Event.ON_PAUSE -> moveToPaused()
+                Lifecycle.Event.ON_STOP -> moveToStopped()
+                Lifecycle.Event.ON_DESTROY -> moveToDestroyed()
                 else -> Unit
             }
         }
-        if (lifecycle != null) lifecycle.addObserver(observer) else mapView.onResume()
+
+        val componentCallbacks = object : ComponentCallbacks2 {
+            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+
+            @Deprecated("Deprecated in Java")
+            override fun onLowMemory() {
+                if (!isDestroyed) {
+                    mapView.onLowMemory()
+                }
+            }
+
+            override fun onTrimMemory(level: Int) {
+                if (!isDestroyed && level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+                    mapView.onLowMemory()
+                }
+            }
+        }
+
+        val appContext = context.applicationContext
+        appContext.registerComponentCallbacks(componentCallbacks)
+        if (lifecycle != null) {
+            lifecycle.addObserver(lifecycleObserver)
+        } else {
+            moveToResumed()
+        }
+        // Pastikan onCreate telah terpanggil sebelum meminta instance MapLibreMap.
+        moveToCreated()
+
+        mapView.getMapAsync { map ->
+            if (isDestroyed) return@getMapAsync
+            configureMapLibreMap(map)
+            map.addOnCameraMoveListener(cameraMoveListener)
+            map.addOnCameraIdleListener(cameraIdleListener)
+            mapLibreMap = map
+            cameraTick.intValue++
+
+            map.setStyle(Style.Builder().fromUri(OpenFreeMapFiordStyleUri)) { style ->
+                if (isDestroyed) return@setStyle
+                applyDarkNavyMapTheme(style)
+                ensureRouteLayers(style)
+                loadedStyle = style
+                cameraTick.intValue++
+            }
+        }
+
         onDispose {
-            lifecycle?.removeObserver(observer)
-            mapView.onCameraFrame = null
-            mapView.onPause()
-            mapView.onDetach()
+            mapView.removeOnLayoutChangeListener(layoutChangeListener)
+            mapLibreMap?.let { map ->
+                map.removeOnCameraMoveListener(cameraMoveListener)
+                map.removeOnCameraIdleListener(cameraIdleListener)
+            }
+            loadedStyle = null
+            mapLibreMap = null
+            lifecycle?.removeObserver(lifecycleObserver)
+            appContext.unregisterComponentCallbacks(componentCallbacks)
+            moveToDestroyed()
         }
     }
 
     val showRoute = mode == VenueFinderMode.ROUTE && (routeInfo?.points?.size ?: 0) >= 2
-    val routeCasing = remember(mapView) {
-        createRoutePolyline(mapView, KuyNavy.copy(alpha = 0.85f), with(density) { 11.dp.toPx() })
-    }
-    val routeLine = remember(mapView) {
-        createRoutePolyline(mapView, KuyOrange, with(density) { 6.dp.toPx() })
-    }
-    val dashIntervals = remember(density) {
-        with(density) { floatArrayOf(12.dp.toPx(), 8.dp.toPx()) }
+
+    // Sinkronkan sumber GeoJSON & layer garis rute oranye setiap kali rute atau style siap.
+    LaunchedEffect(loadedStyle, routeInfo, showRoute) {
+        val style = loadedStyle ?: return@LaunchedEffect
+        updateRouteOnStyle(
+            style = style,
+            routeInfo = routeInfo,
+            showRoute = showRoute,
+        )
     }
 
-    LaunchedEffect(mapView, routeInfo, showRoute) {
-        mapView.overlays.remove(routeCasing)
-        mapView.overlays.remove(routeLine)
-        if (showRoute && routeInfo != null) {
-            val points = routeInfo.points.map { it.toGeoPoint() }
-            routeCasing.setPoints(points)
-            routeLine.setPoints(points)
-            routeLine.outlinePaint.pathEffect =
-                if (routeInfo.isFallback) DashPathEffect(dashIntervals, 0f) else null
-            mapView.overlays.add(routeCasing)
-            mapView.overlays.add(routeLine)
+    val hasAutoCenteredOnUser = remember(mapView) { mutableStateOf(false) }
+
+    // Auto-fit bounds saat mode rute aktif, atau fokus halus ke venue terpilih.
+    val routeHorizontalPaddingPx = with(density) { RouteFocusHorizontalPadding.roundToPx() }
+    val routeTopPaddingPx = with(density) { RouteFocusTopPadding.roundToPx() }
+    val routeBottomPaddingPx = with(density) { RouteFocusBottomPadding.roundToPx() }
+    LaunchedEffect(mapLibreMap, showRoute, routeInfo, selectedVenue?.id) {
+        val map = mapLibreMap ?: return@LaunchedEffect
+        if (showRoute || selectedVenue != null) {
+            hasAutoCenteredOnUser.value = true
         }
-        mapView.invalidate()
-    }
-
-    // Auto-focus kamera ke rute (mode rute) atau ke venue terpilih.
-    val routePaddingPx = with(density) { RouteFocusPadding.roundToPx() }
-    LaunchedEffect(mapView, showRoute, routeInfo, selectedVenue?.id) {
         mapView.runWhenLaidOut {
             when {
                 showRoute && routeInfo != null -> {
-                    val box = BoundingBox.fromGeoPointsSafe(routeInfo.points.map { it.toGeoPoint() })
-                    mapView.zoomToBoundingBox(box, true, routePaddingPx)
+                    val uniquePoints = routeInfo.points
+                        .map { it.toLatLng() }
+                        .distinctBy { "${it.latitude},${it.longitude}" }
+                    if (uniquePoints.size >= 2) {
+                        val maxHorizontal = (mapView.width / 4).coerceAtLeast(16)
+                        val maxTop = (mapView.height / 4).coerceAtLeast(16)
+                        val maxBottom = (mapView.height / 3).coerceAtLeast(16)
+                        val horizontalPad = routeHorizontalPaddingPx.coerceAtMost(maxHorizontal)
+                        val topPad = routeTopPaddingPx.coerceAtMost(maxTop)
+                        val bottomPad = routeBottomPaddingPx.coerceAtMost(maxBottom)
+                        val bounds = LatLngBounds.Builder()
+                            .includes(uniquePoints)
+                            .build()
+                        map.animateCamera(
+                            CameraUpdateFactory.newLatLngBounds(
+                                bounds,
+                                horizontalPad,
+                                topPad,
+                                horizontalPad,
+                                bottomPad,
+                            ),
+                            FocusAnimationMs,
+                        )
+                    } else if (uniquePoints.size == 1) {
+                        map.animateCamera(
+                            CameraUpdateFactory.newLatLngZoom(uniquePoints.first(), FocusVenueZoom),
+                            FocusAnimationMs,
+                        )
+                    }
                 }
 
-                selectedVenue != null -> mapView.controller.animateTo(
-                    selectedVenue.coordinate.toGeoPoint(),
-                    FocusVenueZoom,
+                selectedVenue != null -> {
+                    map.animateCamera(
+                        CameraUpdateFactory.newLatLngZoom(
+                            selectedVenue.coordinate.toLatLng(),
+                            FocusVenueZoom,
+                        ),
+                        FocusAnimationMs,
+                    )
+                }
+            }
+        }
+    }
+
+    // Auto-center ke lokasi user hanya sekali saat pertama buka tab Lokasi tanpa target venue/rute.
+    LaunchedEffect(mapLibreMap, initialUserCenterCoordinate) {
+        val map = mapLibreMap ?: return@LaunchedEffect
+        val target = initialUserCenterCoordinate ?: return@LaunchedEffect
+        if (!hasAutoCenteredOnUser.value && selectedVenue == null && !showRoute) {
+            hasAutoCenteredOnUser.value = true
+            mapView.runWhenLaidOut {
+                map.animateCamera(
+                    CameraUpdateFactory.newLatLngZoom(target.toLatLng(), RecenterUserZoom),
                     FocusAnimationMs,
                 )
             }
         }
     }
 
-    // Ikuti pembaruan GPS hanya saat pengguna belum memilih venue/rute.
-    LaunchedEffect(mapView, userLocation) {
-        if (selectedVenue == null && !showRoute) {
-            mapView.runWhenLaidOut { mapView.controller.animateTo(userLocation.toGeoPoint()) }
+    // Fokus manual ke posisi user saat dipicu lewat recenterToUserRequest tanpa menimpa guard GPS.
+    val latestUserLocation by rememberUpdatedState(userLocation)
+    val lastHandledRecenterRequest = remember(mapView) { mutableIntStateOf(0) }
+    LaunchedEffect(mapLibreMap, recenterToUserRequest) {
+        val map = mapLibreMap ?: return@LaunchedEffect
+        if (recenterToUserRequest > 0 && recenterToUserRequest != lastHandledRecenterRequest.intValue) {
+            lastHandledRecenterRequest.intValue = recenterToUserRequest
+            hasAutoCenteredOnUser.value = true
+            val target = latestUserLocation
+            mapView.runWhenLaidOut {
+                map.animateCamera(
+                    CameraUpdateFactory.newLatLngZoom(target.toLatLng(), RecenterUserZoom),
+                    FocusAnimationMs,
+                )
+            }
         }
     }
 
@@ -216,7 +446,13 @@ fun VenueMapView(
         UserLocationPin(
             userName = userName,
             userPhotoUrl = userPhotoUrl,
-            modifier = Modifier.anchoredToGeo(mapView, userLocation, readCameraTick),
+            onClick = onUserLocationClick,
+            modifier = Modifier.anchoredToGeo(
+                mapView = mapView,
+                mapLibreMap = mapLibreMap,
+                coordinate = userLocation,
+                cameraTick = readCameraTick,
+            ),
         )
 
         visibleVenues.forEach { venue ->
@@ -228,6 +464,7 @@ fun VenueMapView(
                     onDetailClick = { onVenueDetailClick(venue) },
                     modifier = Modifier.anchoredToGeo(
                         mapView = mapView,
+                        mapLibreMap = mapLibreMap,
                         coordinate = venue.coordinate,
                         cameraTick = readCameraTick,
                         bottomInsetPx = dotInsetPx,
@@ -236,7 +473,7 @@ fun VenueMapView(
             }
         }
 
-        OsmAttribution(Modifier.align(Alignment.BottomEnd))
+        MapAttribution(Modifier.align(Alignment.BottomEnd))
     }
 }
 
@@ -356,10 +593,13 @@ private fun VenueThumbnailFallback(venue: VenueUiModel, isLoading: Boolean) {
 private fun UserLocationPin(
     userName: String,
     userPhotoUrl: String?,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier.semantics { contentDescription = "Lokasi kamu" },
+        modifier
+            .semantics { contentDescription = "Lokasi kamu" }
+            .clickable(onClickLabel = "Pusatkan ke lokasi kamu", onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -396,9 +636,9 @@ private fun MarkerPointer(color: Color) {
 }
 
 @Composable
-private fun OsmAttribution(modifier: Modifier = Modifier) {
+private fun MapAttribution(modifier: Modifier = Modifier) {
     Text(
-        "© OpenStreetMap contributors",
+        "© OpenFreeMap • © OpenStreetMap contributors",
         color = HomeText.copy(alpha = 0.75f),
         fontSize = 9.sp,
         modifier = modifier
@@ -433,7 +673,7 @@ private fun VenueMapInspectionPlaceholder(
             }
         }
         Text(
-            "Pratinjau peta OSMDroid",
+            "Pratinjau peta MapLibre",
             color = HomeText.copy(alpha = 0.6f),
             fontSize = 11.sp,
             modifier = Modifier
@@ -453,57 +693,22 @@ private fun VenueMapInspectionPlaceholder(
         UserLocationPin(
             userName = userName,
             userPhotoUrl = userPhotoUrl,
+            onClick = {},
             modifier = Modifier
                 .align(Alignment.Center)
                 .offset(y = 120.dp),
         )
-        OsmAttribution(Modifier.align(Alignment.BottomEnd))
+        MapAttribution(Modifier.align(Alignment.BottomEnd))
     }
 }
 
 /**
- * MapView yang memberi tahu Compose setiap kali kamera (pusat, zoom, rotasi, atau ukuran)
- * berubah, sehingga overlay Compose bisa mengikuti koordinat layar terbaru.
- */
-private class TrackingMapView(context: Context) : MapView(context) {
-    var onCameraFrame: (() -> Unit)? = null
-
-    private var lastLatitude = Double.NaN
-    private var lastLongitude = Double.NaN
-    private var lastZoom = Double.NaN
-    private var lastOrientation = Float.NaN
-    private var lastWidth = -1
-    private var lastHeight = -1
-
-    override fun dispatchDraw(canvas: android.graphics.Canvas) {
-        super.dispatchDraw(canvas)
-        val center = mapCenter
-        val zoom = zoomLevelDouble
-        val orientation = mapOrientation
-        val changed = center.latitude != lastLatitude ||
-            center.longitude != lastLongitude ||
-            zoom != lastZoom ||
-            orientation != lastOrientation ||
-            width != lastWidth ||
-            height != lastHeight
-        if (changed) {
-            lastLatitude = center.latitude
-            lastLongitude = center.longitude
-            lastZoom = zoom
-            lastOrientation = orientation
-            lastWidth = width
-            lastHeight = height
-            onCameraFrame?.invoke()
-        }
-    }
-}
-
-/**
- * Menempatkan composable sehingga titik bawah-tengahnya berada tepat di [coordinate].
- * State kamera dibaca di fase placement agar pan/zoom tidak memicu rekomposisi penuh.
+ * Menempatkan composable sehingga titik bawah-tengahnya berada tepat di proyeksi layar [coordinate].
+ * State kamera dibaca pada fase placement agar pan/zoom tidak memicu rekomposisi penuh.
  */
 private fun Modifier.anchoredToGeo(
     mapView: MapView,
+    mapLibreMap: MapLibreMap?,
     coordinate: GeoCoordinate,
     cameraTick: () -> Int,
     bottomInsetPx: Int = 0,
@@ -511,7 +716,7 @@ private fun Modifier.anchoredToGeo(
     val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
     layout(placeable.width, placeable.height) {
         cameraTick()
-        val point = mapView.screenPointOrNull(coordinate)
+        val point = mapLibreMap?.screenPointOrNull(mapView, coordinate)
         if (point != null) {
             placeable.place(
                 x = point.x - placeable.width / 2,
@@ -521,81 +726,237 @@ private fun Modifier.anchoredToGeo(
     }
 }
 
-private fun MapView.screenPointOrNull(coordinate: GeoCoordinate): IntOffset? {
+private fun MapLibreMap.screenPointOrNull(
+    mapView: MapView,
+    coordinate: GeoCoordinate,
+): IntOffset? {
+    val width = mapView.width
+    val height = mapView.height
     if (width == 0 || height == 0) return null
-    val point = projection.toPixels(coordinate.toGeoPoint(), null)
+    val screenPoint = projection.toScreenLocation(coordinate.toLatLng())
+    if (!screenPoint.x.isFinite() || !screenPoint.y.isFinite()) return null
+    val x = screenPoint.x.roundToInt()
+    val y = screenPoint.y.roundToInt()
     val margin = maxOf(width, height) / 2
-    val isNearViewport = point.x in -margin..(width + margin) &&
-        point.y in -margin..(height + margin)
-    return if (isNearViewport) IntOffset(point.x, point.y) else null
+    val isNearViewport = x in -margin..(width + margin) &&
+        y in -margin..(height + margin)
+    return if (isNearViewport) IntOffset(x, y) else null
 }
 
 private fun MapView.runWhenLaidOut(action: () -> Unit) {
-    if (width > 0 && height > 0) {
+    if (isLaidOut && width > 0 && height > 0) {
         action()
     } else {
-        addOnFirstLayoutListener { _, _, _, _, _ -> action() }
+        val listener = object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(
+                v: View,
+                left: Int,
+                top: Int,
+                right: Int,
+                bottom: Int,
+                oldLeft: Int,
+                oldTop: Int,
+                oldRight: Int,
+                oldBottom: Int,
+            ) {
+                if (v.width > 0 && v.height > 0) {
+                    v.removeOnLayoutChangeListener(this)
+                    action()
+                }
+            }
+        }
+        addOnLayoutChangeListener(listener)
     }
 }
 
-private const val OsmdroidUserAgent = "OlahragaKuy/1.0 (Android; Medan)"
-
-private fun configureOsmdroid(context: Context) {
-    val config = Configuration.getInstance()
-    config.userAgentValue = OsmdroidUserAgent
-    val basePath = File(context.cacheDir, "osmdroid_osm_v2").apply { mkdirs() }
-    config.osmdroidBasePath = basePath
-    config.osmdroidTileCache = File(config.osmdroidBasePath, "tiles").apply { mkdirs() }
-    config.tileDownloadThreads = 2
+private fun createMapLibreMapView(
+    context: Context,
+    initialCenter: GeoCoordinate,
+    initialZoom: Double,
+): MapView {
+    val options = MapLibreMapOptions.createFromAttributes(context)
+        .foregroundLoadColor(MapBackgroundColor.toArgb())
+        .compassEnabled(false)
+        .logoEnabled(false)
+        .attributionEnabled(false)
+        .camera(
+            CameraPosition.Builder()
+                .target(initialCenter.toLatLng())
+                .zoom(initialZoom)
+                .build(),
+        )
+    return MapView(context, options).apply {
+        setBackgroundColor(MapBackgroundColor.toArgb())
+    }
 }
 
-private fun createDarkNavyColorFilter(): ColorMatrixColorFilter {
-    val matrix = ColorMatrix().apply {
-        setSaturation(0.25f)
-        postConcat(
-            ColorMatrix(
-                floatArrayOf(
-                    -0.80f, 0f, 0f, 0f, 205f,
-                    0f, -0.80f, 0f, 0f, 221f,
-                    0f, 0f, -0.80f, 0f, 239f,
-                    0f, 0f, 0f, 1f, 0f,
-                ),
+private fun configureMapLibreMap(map: MapLibreMap) {
+    map.setMinZoomPreference(MinMapZoom)
+    map.setMaxZoomPreference(MaxMapZoom)
+    map.uiSettings.apply {
+        isCompassEnabled = false
+        isLogoEnabled = false
+        isAttributionEnabled = false
+        isTiltGesturesEnabled = false
+    }
+}
+
+/**
+ * Menyembunyikan seluruh layer bangunan dan menyelaraskan palet vector map OpenFreeMap Fiord
+ * ke nuansa dark navy aplikasi tanpa mengubah layer garis rute oranye milik aplikasi.
+ */
+private fun applyDarkNavyMapTheme(style: Style) {
+    val backgroundArgb = MapBackgroundColor.toArgb()
+    val labelTextArgb = MapLabelTextColor.toArgb()
+    val labelHaloArgb = MapLabelHaloColor.toArgb()
+
+    style.layers.forEach { layer ->
+        val rawId = layer.id
+        if (rawId in RouteLayerIds) return@forEach
+
+        val id = rawId.lowercase(Locale.ROOT)
+        if (id.contains("building")) {
+            layer.setProperties(PropertyFactory.visibility(Property.NONE))
+            return@forEach
+        }
+
+        when (layer) {
+            is BackgroundLayer -> {
+                layer.setProperties(PropertyFactory.backgroundColor(backgroundArgb))
+            }
+
+            is FillLayer -> {
+                layer.setProperties(
+                    PropertyFactory.fillColor(resolveDarkNavyFillColorArgb(id)),
+                )
+            }
+
+            is LineLayer -> {
+                resolveDarkNavyLineColorArgb(id)?.let { colorArgb ->
+                    layer.setProperties(PropertyFactory.lineColor(colorArgb))
+                }
+            }
+
+            is SymbolLayer -> {
+                layer.setProperties(
+                    PropertyFactory.textColor(labelTextArgb),
+                    PropertyFactory.textHaloColor(labelHaloArgb),
+                )
+            }
+        }
+    }
+}
+
+internal fun resolveDarkNavyFillColorArgb(layerId: String): Int {
+    val id = layerId.lowercase(Locale.ROOT)
+    return when {
+        id.containsAny("water", "ocean", "lake", "river") -> MapWaterColor.toArgb()
+        id.containsAny("park", "grass", "wood", "forest", "green", "pitch", "leisure") ->
+            MapParkColor.toArgb()
+        id.containsAny("commercial", "industrial", "aeroway") -> MapLandAccentColor.toArgb()
+        else -> MapLandColor.toArgb()
+    }
+}
+
+internal fun resolveDarkNavyLineColorArgb(layerId: String): Int? {
+    if (layerId in RouteLayerIds) return null
+    val id = layerId.lowercase(Locale.ROOT)
+    return when {
+        id.containsAny("water", "waterway") -> MapWaterColor.toArgb()
+        id.containsAny("casing", "outline") -> MapRoadCasingColor.toArgb()
+        id.containsAny("motorway", "trunk", "primary", "secondary", "major") ->
+            MapMajorRoadColor.toArgb()
+        id.containsAny("boundary", "rail") -> MapBoundaryRailColor.toArgb()
+        id.containsAny(
+            "road",
+            "street",
+            "tertiary",
+            "minor",
+            "service",
+            "path",
+            "track",
+            "bridge",
+            "tunnel",
+            "highway",
+        ) -> MapMinorRoadColor.toArgb()
+        else -> null
+    }
+}
+
+private fun String.containsAny(vararg tokens: String): Boolean =
+    tokens.any { token -> contains(token) }
+
+private fun ensureRouteLayers(style: Style) {
+    if (style.getSource(RouteSourceId) == null) {
+        style.addSource(GeoJsonSource(RouteSourceId))
+    }
+    if (style.getLayer(RouteCasingLayerId) == null) {
+        style.addLayer(
+            LineLayer(RouteCasingLayerId, RouteSourceId).withProperties(
+                PropertyFactory.lineColor(KuyNavy.copy(alpha = 0.85f).toArgb()),
+                PropertyFactory.lineWidth(9f),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                PropertyFactory.visibility(Property.NONE),
             ),
         )
     }
-    return ColorMatrixColorFilter(matrix)
+    if (style.getLayer(RouteSolidLayerId) == null) {
+        style.addLayer(
+            LineLayer(RouteSolidLayerId, RouteSourceId).withProperties(
+                PropertyFactory.lineColor(KuyOrange.toArgb()),
+                PropertyFactory.lineWidth(5.5f),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                PropertyFactory.visibility(Property.NONE),
+            ),
+        )
+    }
+    if (style.getLayer(RouteDashedLayerId) == null) {
+        style.addLayer(
+            LineLayer(RouteDashedLayerId, RouteSourceId).withProperties(
+                PropertyFactory.lineColor(KuyOrange.toArgb()),
+                PropertyFactory.lineWidth(5.5f),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                PropertyFactory.lineDasharray(arrayOf(2.4f, 1.6f)),
+                PropertyFactory.visibility(Property.NONE),
+            ),
+        )
+    }
 }
 
-private fun createDarkMapView(context: Context, center: GeoCoordinate): TrackingMapView =
-    TrackingMapView(context).apply {
-        setTileSource(TileSourceFactory.MAPNIK)
-        setMultiTouchControls(true)
-        zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-        setTilesScaledToDpi(true)
-        setMinZoomLevel(MinMapZoom)
-        setMaxZoomLevel(MaxMapZoom)
-        setBackgroundColor(HomeNavy.toArgb())
-        overlayManager.tilesOverlay.apply {
-            setColorFilter(createDarkNavyColorFilter())
-            setLoadingBackgroundColor(HomeNavy.toArgb())
-            setLoadingLineColor(HomeBlue.toArgb())
+private fun updateRouteOnStyle(
+    style: Style,
+    routeInfo: RouteInfo?,
+    showRoute: Boolean,
+) {
+    if (!style.isFullyLoaded) return
+    val source = style.getSourceAs<GeoJsonSource>(RouteSourceId) ?: return
+    val casingLayer = style.getLayer(RouteCasingLayerId)
+    val solidLayer = style.getLayer(RouteSolidLayerId)
+    val dashedLayer = style.getLayer(RouteDashedLayerId)
+
+    if (showRoute && routeInfo != null && routeInfo.points.size >= 2) {
+        val linePoints = routeInfo.points.map { Point.fromLngLat(it.longitude, it.latitude) }
+        source.setGeoJson(Feature.fromGeometry(LineString.fromLngLats(linePoints)))
+        casingLayer?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
+        if (routeInfo.isFallback) {
+            solidLayer?.setProperties(PropertyFactory.visibility(Property.NONE))
+            dashedLayer?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
+        } else {
+            solidLayer?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
+            dashedLayer?.setProperties(PropertyFactory.visibility(Property.NONE))
         }
-        controller.setZoom(DefaultMapZoom)
-        controller.setCenter(center.toGeoPoint())
+    } else {
+        source.setGeoJson(FeatureCollection.fromFeatures(emptyArray()))
+        casingLayer?.setProperties(PropertyFactory.visibility(Property.NONE))
+        solidLayer?.setProperties(PropertyFactory.visibility(Property.NONE))
+        dashedLayer?.setProperties(PropertyFactory.visibility(Property.NONE))
     }
+}
 
-private fun createRoutePolyline(mapView: MapView, color: Color, widthPx: Float): Polyline =
-    Polyline(mapView).apply {
-        outlinePaint.color = color.toArgb()
-        outlinePaint.strokeWidth = widthPx
-        outlinePaint.strokeCap = Paint.Cap.ROUND
-        outlinePaint.strokeJoin = Paint.Join.ROUND
-        outlinePaint.isAntiAlias = true
-        // Abaikan tap agar info window bawaan polyline tidak muncul.
-        setOnClickListener { _, _, _ -> false }
-    }
-
-private fun GeoCoordinate.toGeoPoint(): GeoPoint = GeoPoint(latitude, longitude)
+private fun GeoCoordinate.toLatLng(): LatLng = LatLng(latitude, longitude)
 
 private fun Context.findLifecycleOwner(): LifecycleOwner? {
     var current: Context? = this
