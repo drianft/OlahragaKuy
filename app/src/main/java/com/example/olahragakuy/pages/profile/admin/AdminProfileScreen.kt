@@ -41,6 +41,8 @@ fun AdminProfileScreen(
     onHomeClick: () -> Unit = {},
     onTabSelected: (HomeNavTab) -> Unit = {},
     onProfileSaved: (username: String, bio: String) -> Unit = { _, _ -> },
+    onDeletePost: ((UserPost) -> Unit)? = null,
+    onEditPost: ((UserPost, String) -> Unit)? = null,
     onOpenDashboardReport: (() -> Unit)? = null,
 ) {
     var showDashboardReport by rememberSaveable { mutableStateOf(false) }
@@ -66,6 +68,8 @@ fun AdminProfileScreen(
             onHomeClick = onHomeClick,
             onTabSelected = onTabSelected,
             onProfileSaved = onProfileSaved,
+            onDeletePost = onDeletePost,
+            onEditPost = onEditPost,
             showAdminDashboard = true,
             onAdminDashboardClick = {
                 if (onOpenDashboardReport != null) {

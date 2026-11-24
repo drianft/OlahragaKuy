@@ -49,7 +49,9 @@ fun LoggedInProfileScreen(
         var bio by remember { mutableStateOf("") }
         var userRole by remember(initialRole) { mutableStateOf(initialRole) }
         var followers by remember { mutableIntStateOf(0) }
+        var followersSubCount by remember { mutableIntStateOf(0) }
         var following by remember { mutableIntStateOf(0) }
+        var followingSubCount by remember { mutableIntStateOf(0) }
         var userPosts by remember { mutableStateOf<List<UserPost>>(emptyList()) }
         var taggedPosts by remember { mutableStateOf<List<UserPost>>(emptyList()) }
         var loading by remember { mutableStateOf(true) }
@@ -103,15 +105,21 @@ fun LoggedInProfileScreen(
                     }
                 }
 
+            val followersRegistration = db.collection("users")
+                .document(currentUser.uid)
+                .collection("followers")
+                .addSnapshotListener { snapshot, _ ->
+                    if (auth.currentUser?.uid == currentUser.uid && snapshot != null) {
+                        followersSubCount = snapshot.size()
+                    }
+                }
+
             val followingRegistration = db.collection("users")
                 .document(currentUser.uid)
                 .collection("following")
                 .addSnapshotListener { snapshot, _ ->
                     if (auth.currentUser?.uid == currentUser.uid && snapshot != null) {
-                        val subCount = snapshot.size()
-                        if (subCount > following) {
-                            following = subCount
-                        }
+                        followingSubCount = snapshot.size()
                     }
                 }
 
@@ -119,6 +127,7 @@ fun LoggedInProfileScreen(
                 userRegistration.remove()
                 postsRegistration.remove()
                 taggedRegistration.remove()
+                followersRegistration.remove()
                 followingRegistration.remove()
             }
         }
@@ -144,13 +153,42 @@ fun LoggedInProfileScreen(
                     onError = { saveError = it },
                 )
             }
+            val handleDeletePost: (UserPost) -> Unit = { post ->
+                val previousPosts = userPosts
+                userPosts = userPosts.filterNot { it.documentId == post.documentId }
+                deleteUserPostFromFirestore(
+                    user = currentUser,
+                    documentId = post.documentId,
+                    onError = { err ->
+                        userPosts = previousPosts
+                        saveError = err
+                    },
+                )
+            }
+            val handleEditPost: (UserPost, String) -> Unit = { post, newCaption ->
+                val previousPosts = userPosts
+                userPosts = userPosts.map {
+                    if (it.documentId == post.documentId) it.copy(caption = newCaption) else it
+                }
+                updateUserPostCaptionInFirestore(
+                    documentId = post.documentId,
+                    newCaption = newCaption,
+                    onError = { err ->
+                        userPosts = previousPosts
+                        saveError = err
+                    },
+                )
+            }
+            val computedFollowers = maxOf(followers, followersSubCount)
+            val computedFollowing = maxOf(following, followingSubCount)
+
             if (userRole.equals("admin", ignoreCase = true)) {
                 AdminProfileScreen(
                     initialUsername = username,
                     initialDisplayName = displayName,
                     initialBio = bio,
-                    followers = followers,
-                    following = following,
+                    followers = computedFollowers,
+                    following = computedFollowing,
                     feedPosts = userPosts,
                     gridPosts = userPosts,
                     taggedPosts = taggedPosts,
@@ -159,6 +197,8 @@ fun LoggedInProfileScreen(
                     onTabSelected = onTabSelected,
                     onLogout = onLogout,
                     onProfileSaved = handleProfileSaved,
+                    onDeletePost = handleDeletePost,
+                    onEditPost = handleEditPost,
                     onOpenDashboardReport = onOpenAdminDashboard,
                 )
             } else {
@@ -166,8 +206,8 @@ fun LoggedInProfileScreen(
                     initialUsername = username,
                     initialDisplayName = displayName,
                     initialBio = bio,
-                    followers = followers,
-                    following = following,
+                    followers = computedFollowers,
+                    following = computedFollowing,
                     feedPosts = userPosts,
                     gridPosts = userPosts,
                     taggedPosts = taggedPosts,
@@ -176,6 +216,8 @@ fun LoggedInProfileScreen(
                     onTabSelected = onTabSelected,
                     onLogout = onLogout,
                     onProfileSaved = handleProfileSaved,
+                    onDeletePost = handleDeletePost,
+                    onEditPost = handleEditPost,
                 )
             }
         }
@@ -200,7 +242,7 @@ fun LoggedInProfileScreen(
         saveError?.let { errMsg ->
             AlertDialog(
                 onDismissRequest = { saveError = null },
-                title = { Text("Gagal menyimpan profil") },
+                title = { Text("Gagal memperbarui data") },
                 text = { Text(errMsg) },
                 confirmButton = {
                     TextButton(onClick = { saveError = null }) { Text("Mengerti") }

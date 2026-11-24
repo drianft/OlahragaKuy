@@ -10,6 +10,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,11 +34,30 @@ import com.example.olahragakuy.pages.posts.SearchPostScreen
 import com.example.olahragakuy.pages.posts.currentUserOrNull
 import com.example.olahragakuy.pages.posts.ensureDirectChatRoom
 import com.example.olahragakuy.pages.posts.resolveDisplayName
+import com.example.olahragakuy.pages.drinkreminder.DrinkReminderScreen
 import com.example.olahragakuy.pages.profile.admin.AdminDashboardReportScreen
 import com.example.olahragakuy.pages.profile.user.LoggedInProfileScreen
 import com.example.olahragakuy.pages.profile.user.OtherUserProfileScreen
+import com.example.olahragakuy.pages.training.CreateCustomWorkoutScreen
+import com.example.olahragakuy.pages.training.CustomWorkoutDetailScreen
+import com.example.olahragakuy.pages.training.CustomWorkoutListScreen
+import com.example.olahragakuy.pages.training.CustomWorkoutStore
+import com.example.olahragakuy.pages.training.ExerciseDetailScreen
+import com.example.olahragakuy.pages.training.GuidedWorkoutDaysScreen
+import com.example.olahragakuy.pages.training.GuidedWorkoutDetailScreen
+import com.example.olahragakuy.pages.training.GuidedWorkoutProgressStore
+import com.example.olahragakuy.pages.training.HomeWorkoutScreen
 import com.example.olahragakuy.pages.training.TrainingHomeScreen
+import com.example.olahragakuy.pages.training.WorkoutFirestoreStore
+import com.example.olahragakuy.pages.training.WorkoutSessionScreen
+import com.example.olahragakuy.pages.training.completeGuidedWorkoutDayForUser
+import com.example.olahragakuy.pages.training.deleteCustomWorkoutFromFirestore
+import com.example.olahragakuy.pages.training.observeUserCustomWorkouts
+import com.example.olahragakuy.pages.training.observeUserGuidedProgress
+import com.example.olahragakuy.pages.training.observeWorkoutFirestoreData
+import com.example.olahragakuy.pages.training.saveCustomWorkoutToFirestore
 import com.example.olahragakuy.pages.venuefinder.VenueChatBridge
+import com.example.olahragakuy.pages.venuefinder.VenueChatTarget
 import com.example.olahragakuy.pages.venuefinder.VenueFinderScreen
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.theme.KuyNavy
@@ -49,12 +69,74 @@ import com.google.firebase.firestore.FirebaseFirestore
 private const val HOME_DISSOLVE_MS = 300
 
 @Composable
-fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
+fun AuthNavigation(
+    modifier: Modifier = Modifier,
+    onExit: () -> Unit = {},
+    openDrinkReminder: Boolean = false,
+    onConsumeOpenDrinkReminder: () -> Unit = {},
+) {
     val navController = rememberNavController()
     var currentUserRole by rememberSaveable { mutableStateOf("member") }
     var prefilledEmail by rememberSaveable { mutableStateOf("") }
+    val auth = remember { FirebaseAuth.getInstance() }
+    var currentUserUid by remember { mutableStateOf(auth.currentUser?.uid) }
     val startDestination = remember {
-        if (FirebaseAuth.getInstance().currentUser != null) "home" else "opening"
+        if (auth.currentUser != null) "home" else "opening"
+    }
+
+    DisposableEffect(auth) {
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            currentUserUid = firebaseAuth.currentUser?.uid
+        }
+        auth.addAuthStateListener(listener)
+        onDispose { auth.removeAuthStateListener(listener) }
+    }
+
+    DisposableEffect(currentUserUid) {
+        val uid = currentUserUid
+        val catalogRegistration = if (uid != null) {
+            observeWorkoutFirestoreData(autoSeedIfEmpty = true)
+        } else {
+            WorkoutFirestoreStore.clear()
+            null
+        }
+        val guidedProgressRegistration = if (uid != null) {
+            observeUserGuidedProgress(userId = uid)
+        } else {
+            GuidedWorkoutProgressStore.reset()
+            null
+        }
+        val customWorkoutRegistration = if (uid != null) {
+            observeUserCustomWorkouts(userId = uid)
+        } else {
+            CustomWorkoutStore.clear()
+            null
+        }
+        onDispose {
+            catalogRegistration?.remove()
+            guidedProgressRegistration?.remove()
+            customWorkoutRegistration?.remove()
+        }
+    }
+
+    LaunchedEffect(openDrinkReminder, currentUserRole) {
+        if (!openDrinkReminder) return@LaunchedEffect
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        val currentRoute = navController.currentDestination?.route
+        val isOnAuthScreen = currentRoute == "opening" || currentRoute == "login" || currentRoute == "register"
+        if (currentUser == null || isOnAuthScreen) {
+            onConsumeOpenDrinkReminder()
+            return@LaunchedEffect
+        }
+        val isVerifiedOrAdmin = currentUser.isEmailVerified || currentUserRole == "admin"
+        if (isVerifiedOrAdmin) {
+            onConsumeOpenDrinkReminder()
+            if (currentRoute != "drink_reminder") {
+                navController.navigate("drink_reminder") {
+                    launchSingleTop = true
+                }
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -151,6 +233,13 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
     val navigateToVenueFinder: (String) -> Unit = { venueName ->
         val encodedVenueName = Uri.encode(venueName.trim())
         navController.navigate("venue_finder?venueName=$encodedVenueName") {
+            launchSingleTop = true
+        }
+    }
+
+    val navigateToVenueInviteChat: (VenueChatTarget) -> Unit = { target ->
+        VenueChatBridge.setPendingTarget(target)
+        navController.navigate("chat?returnDirectlyOnBack=true") {
             launchSingleTop = true
         }
     }
@@ -260,7 +349,8 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                     navController.navigate("notifications") { launchSingleTop = true }
                 },
                 onChatClick = {
-                    navController.navigate("chat") { launchSingleTop = true }
+                    VenueChatBridge.setPendingTarget(null)
+                    navController.navigate("chat?returnDirectlyOnBack=false") { launchSingleTop = true }
                 },
                 onTabSelected = navigateToTab,
                 onUserProfileClick = navigateToUserProfile,
@@ -273,12 +363,8 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                         navigateToTab(HomeNavTab.KOMUNITAS)
                     }
                 },
-                onNavigateToChat = { target ->
-                    VenueChatBridge.setPendingTarget(target)
-                    navController.navigate("chat") {
-                        launchSingleTop = true
-                    }
-                },
+                onTabSelected = navigateToTab,
+                onNavigateToChat = navigateToVenueInviteChat,
             )
         }
         composable(
@@ -291,17 +377,224 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
             VenueFinderScreen(
                 onBack = { navController.popBackStack() },
                 initialFocusedVenueName = venueName,
-                onNavigateToChat = { target ->
-                    VenueChatBridge.setPendingTarget(target)
-                    navController.navigate("chat") {
-                        launchSingleTop = true
-                    }
-                },
+                onTabSelected = navigateToTab,
+                onNavigateToChat = navigateToVenueInviteChat,
             )
         }
         composable("latihan") {
             TrainingHomeScreen(
                 onTabSelected = navigateToTab,
+                onHomeWorkoutClick = {
+                    navController.navigate("workout_rumahan") {
+                        launchSingleTop = true
+                    }
+                },
+                onWaterReminderClick = {
+                    navController.navigate("drink_reminder") {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+        composable("workout_rumahan") {
+            HomeWorkoutScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navigateToTab(HomeNavTab.LATIHAN)
+                    }
+                },
+                onTabSelected = navigateToTab,
+                onGuidedWorkoutClick = {
+                    navController.navigate("guided_workout_days") {
+                        launchSingleTop = true
+                    }
+                },
+                onCustomWorkoutClick = {
+                    navController.navigate("custom_workout_list") {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+        composable("custom_workout_list") {
+            CustomWorkoutListScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navigateToTab(HomeNavTab.LATIHAN)
+                    }
+                },
+                onTabSelected = navigateToTab,
+                onWorkoutClick = { workoutId ->
+                    navController.navigate("custom_workout_detail/${Uri.encode(workoutId)}") {
+                        launchSingleTop = true
+                    }
+                },
+                onAddWorkoutClick = {
+                    navController.navigate("custom_workout_create") {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+        composable("custom_workout_create") {
+            CreateCustomWorkoutScreen(
+                onBack = { navController.popBackStack() },
+                onSaveWorkout = { name, selectedExercises, onResult ->
+                    val uid = currentUserUid ?: auth.currentUser?.uid.orEmpty()
+                    saveCustomWorkoutToFirestore(
+                        userId = uid,
+                        name = name,
+                        selectedExercises = selectedExercises,
+                        onResult = onResult,
+                    )
+                },
+                onCreatedContinue = {
+                    if (!navController.popBackStack("custom_workout_list", inclusive = false)) {
+                        navController.popBackStack()
+                    }
+                },
+            )
+        }
+        composable(
+            route = "custom_workout_detail/{workoutId}",
+            arguments = listOf(
+                navArgument("workoutId") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
+            val workoutId = entry.arguments?.getString("workoutId").orEmpty()
+            CustomWorkoutDetailScreen(
+                workoutId = workoutId,
+                onBack = { navController.popBackStack() },
+                onExerciseClick = { exerciseKey ->
+                    navController.navigate("exercise_detail/${Uri.encode(exerciseKey)}") {
+                        launchSingleTop = true
+                    }
+                },
+                onStartWorkoutClick = {
+                    navController.navigate("custom_workout_session/${Uri.encode(workoutId)}") {
+                        launchSingleTop = true
+                    }
+                },
+                onDeleteWorkoutClick = { targetId ->
+                    val uid = currentUserUid ?: auth.currentUser?.uid.orEmpty()
+                    deleteCustomWorkoutFromFirestore(
+                        userId = uid,
+                        workoutId = targetId,
+                        onResult = { success, _ ->
+                            if (success) {
+                                navController.popBackStack()
+                            }
+                        },
+                    )
+                },
+            )
+        }
+        composable(
+            route = "custom_workout_session/{workoutId}",
+            arguments = listOf(
+                navArgument("workoutId") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
+            val workoutId = entry.arguments?.getString("workoutId").orEmpty()
+            val customPlan = CustomWorkoutStore.workoutById(workoutId)
+            WorkoutSessionScreen(
+                exercises = customPlan?.exercises.orEmpty(),
+                onQuitConfirmed = { navController.popBackStack() },
+                onWorkoutCompleted = {},
+                onCompletedContinue = {
+                    if (!navController.popBackStack("custom_workout_list", inclusive = false)) {
+                        navController.popBackStack()
+                    }
+                },
+            )
+        }
+        composable("guided_workout_days") {
+            val activeUid = currentUserUid ?: auth.currentUser?.uid
+            val syncedForCurrentUser = activeUid != null && GuidedWorkoutProgressStore.activeUserId == activeUid
+            GuidedWorkoutDaysScreen(
+                currentUserId = activeUid,
+                isLoadingProgress = !syncedForCurrentUser || GuidedWorkoutProgressStore.isLoading,
+                highestUnlockedDay = if (syncedForCurrentUser) GuidedWorkoutProgressStore.highestUnlockedDay else 1,
+                completedDays = if (syncedForCurrentUser) GuidedWorkoutProgressStore.completedDays else emptySet(),
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navigateToTab(HomeNavTab.LATIHAN)
+                    }
+                },
+                onTabSelected = navigateToTab,
+                onDayClick = { dayNumber ->
+                    navController.navigate("guided_workout_detail/$dayNumber") {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+        composable(
+            route = "guided_workout_detail/{dayNumber}",
+            arguments = listOf(
+                navArgument("dayNumber") { type = NavType.IntType; defaultValue = 1 },
+            ),
+        ) { entry ->
+            val dayNumber = entry.arguments?.getInt("dayNumber") ?: 1
+            GuidedWorkoutDetailScreen(
+                dayNumber = dayNumber,
+                onBack = { navController.popBackStack() },
+                onExerciseClick = { exerciseKey ->
+                    navController.navigate("exercise_detail/${Uri.encode(exerciseKey)}") {
+                        launchSingleTop = true
+                    }
+                },
+                onStartWorkoutClick = {
+                    navController.navigate("guided_workout_session/$dayNumber") {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+        composable(
+            route = "guided_workout_session/{dayNumber}",
+            arguments = listOf(
+                navArgument("dayNumber") { type = NavType.IntType; defaultValue = 1 },
+            ),
+        ) { entry ->
+            val dayNumber = entry.arguments?.getInt("dayNumber") ?: 1
+            val dayPlan = WorkoutFirestoreStore.dayPlanOrNull(dayNumber)
+            WorkoutSessionScreen(
+                exercises = dayPlan?.exercises.orEmpty(),
+                onQuitConfirmed = { navController.popBackStack() },
+                onWorkoutCompleted = {
+                    val uid = currentUserUid ?: auth.currentUser?.uid.orEmpty()
+                    completeGuidedWorkoutDayForUser(
+                        userId = uid,
+                        dayNumber = dayNumber,
+                    )
+                },
+                onCompletedContinue = {
+                    if (!navController.popBackStack("guided_workout_days", inclusive = false)) {
+                        navController.popBackStack()
+                    }
+                },
+            )
+        }
+        composable(
+            route = "exercise_detail/{exerciseKey}",
+            arguments = listOf(
+                navArgument("exerciseKey") { type = NavType.StringType; defaultValue = "SIT_UP" },
+            ),
+        ) { entry ->
+            val exerciseKey = entry.arguments?.getString("exerciseKey").orEmpty().ifBlank { "SIT_UP" }
+            ExerciseDetailScreen(
+                exerciseKey = exerciseKey,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable("drink_reminder") {
+            DrinkReminderScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navigateToTab(HomeNavTab.LATIHAN)
+                    }
+                },
             )
         }
         composable("profile") {
@@ -321,6 +614,8 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                 },
                 onLogout = {
                     currentUserRole = "member"
+                    GuidedWorkoutProgressStore.reset()
+                    CustomWorkoutStore.clear()
                     FirebaseAuth.getInstance().signOut()
                     navController.navigate("opening") {
                         popUpTo(0) { inclusive = true }
@@ -352,9 +647,19 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                 onUserProfileClick = navigateToUserProfile,
             )
         }
-        composable("chat") {
+        composable(
+            route = "chat?returnDirectlyOnBack={returnDirectlyOnBack}",
+            arguments = listOf(
+                navArgument("returnDirectlyOnBack") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+            ),
+        ) { entry ->
+            val returnDirectlyOnBack = entry.arguments?.getBoolean("returnDirectlyOnBack") ?: false
             ChatScreen(
                 onBack = { navController.popBackStack() },
+                returnDirectlyOnBack = returnDirectlyOnBack,
                 onOpenVenueFinder = navigateToVenueFinder,
             )
         }

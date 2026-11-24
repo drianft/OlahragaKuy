@@ -32,6 +32,8 @@ fun ProfileScreen(
     onProfileSaved: (username: String, bio: String) -> Unit = { _, _ -> },
     showAdminDashboard: Boolean = false,
     onAdminDashboardClick: () -> Unit = {},
+    onDeletePost: ((UserPost) -> Unit)? = {},
+    onEditPost: ((UserPost, String) -> Unit)? = { _, _ -> },
 ) {
     var state by rememberSaveable(stateSaver = ProfileUiState.Saver) {
         mutableStateOf(
@@ -99,6 +101,8 @@ fun ProfileScreen(
                     username = currentState.username,
                     posts = feedPosts,
                     onPostClick = onPostClick,
+                    onDeletePost = onDeletePost,
+                    onEditPost = onEditPost,
                     modifier = contentModifier,
                     header = header
                 )

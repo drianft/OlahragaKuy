@@ -249,8 +249,10 @@ internal fun saveUserProfileToFirestore(
 }
 
 /**
- * Follows or unfollows [targetUid] under `users/{currentUid}/following/{targetUid}` and syncs
- * the current user's `followingCount` in Firestore.
+ * Follows or unfollows [targetUid] atomically in Firestore:
+ * - updates `users/{currentUid}/following/{targetUid}` & `users/{currentUid}.followingCount`
+ * - updates `users/{targetUid}/followers/{currentUid}` & `users/{targetUid}.followersCount`
+ * so follower counts update live across all devices.
  */
 internal fun toggleFollowUser(
     currentUser: FirebaseUser,
@@ -268,47 +270,183 @@ internal fun toggleFollowUser(
     }
     val db = FirebaseFirestore.getInstance()
     val currentUserRef = db.collection("users").document(currentUser.uid)
-    val followingCollection = currentUserRef.collection("following")
-    val followingDocRef = followingCollection.document(targetUid)
+    val followingDocRef = currentUserRef.collection("following").document(targetUid)
+    val targetUserRef = db.collection("users").document(targetUid)
+    val targetFollowerDocRef = targetUserRef.collection("followers").document(currentUser.uid)
 
-    fun syncFollowingCount() {
-        followingCollection.get()
-            .addOnSuccessListener { snap ->
-                currentUserRef.set(
-                    mapOf(
-                        "followingCount" to snap.size(),
-                        "updatedAt" to FieldValue.serverTimestamp(),
-                    ),
-                    SetOptions.merge(),
-                )
-            }
+    val currentName = currentUser.displayName?.takeIf { it.isNotBlank() }
+        ?: currentUser.email?.substringBefore("@")?.takeIf { it.isNotBlank() }
+        ?: "Pengguna"
+
+    val followPayload = buildMap<String, Any> {
+        put("uid", targetUid)
+        put("username", targetUsername.ifBlank { targetDisplayName })
+        put("displayName", targetDisplayName.ifBlank { targetUsername })
+        put("name", targetDisplayName.ifBlank { targetUsername })
+        targetPhotoUrl?.takeIf { it.isNotBlank() }?.let { put("photoUrl", it) }
+        put("createdAt", FieldValue.serverTimestamp())
     }
 
-    if (currentlyFollowing) {
-        followingDocRef.delete()
-            .addOnSuccessListener {
-                syncFollowingCount()
-                onSuccess(false)
-            }
-            .addOnFailureListener { err ->
-                onError(err.localizedMessage ?: "Gagal berhenti mengikuti akun ini.")
-            }
-    } else {
-        val followPayload = buildMap<String, Any> {
-            put("uid", targetUid)
-            put("username", targetUsername.ifBlank { targetDisplayName })
-            put("displayName", targetDisplayName.ifBlank { targetUsername })
-            put("name", targetDisplayName.ifBlank { targetUsername })
-            targetPhotoUrl?.takeIf { it.isNotBlank() }?.let { put("photoUrl", it) }
-            put("createdAt", FieldValue.serverTimestamp())
+    val followerPayload = buildMap<String, Any> {
+        put("uid", currentUser.uid)
+        put("username", currentName)
+        put("displayName", currentName)
+        put("name", currentName)
+        currentUser.photoUrl?.toString()?.takeIf { it.isNotBlank() }?.let { put("photoUrl", it) }
+        put("createdAt", FieldValue.serverTimestamp())
+    }
+
+    db.runTransaction { transaction ->
+        val followingSnap = transaction.get(followingDocRef)
+        val currentUserSnap = transaction.get(currentUserRef)
+        val targetUserSnap = transaction.get(targetUserRef)
+
+        val actualFollowing = followingSnap.exists()
+        val shouldFollow = if (currentlyFollowing == actualFollowing) !actualFollowing else !currentlyFollowing
+
+        val currentFollowingCount = (currentUserSnap.getLong("followingCount") ?: 0L).coerceAtLeast(0L)
+        val nextFollowingCount = if (shouldFollow) {
+            currentFollowingCount + 1L
+        } else {
+            (currentFollowingCount - 1L).coerceAtLeast(0L)
         }
-        followingDocRef.set(followPayload, SetOptions.merge())
-            .addOnSuccessListener {
-                syncFollowingCount()
-                onSuccess(true)
-            }
-            .addOnFailureListener { err ->
-                onError(err.localizedMessage ?: "Gagal mengikuti akun ini.")
-            }
+
+        val currentFollowersCount = (targetUserSnap.getLong("followersCount") ?: 0L).coerceAtLeast(0L)
+        val nextFollowersCount = if (shouldFollow) {
+            currentFollowersCount + 1L
+        } else {
+            (currentFollowersCount - 1L).coerceAtLeast(0L)
+        }
+
+        if (shouldFollow) {
+            transaction.set(followingDocRef, followPayload, SetOptions.merge())
+            transaction.set(targetFollowerDocRef, followerPayload, SetOptions.merge())
+        } else {
+            transaction.delete(followingDocRef)
+            transaction.delete(targetFollowerDocRef)
+        }
+
+        if (currentUserSnap.exists()) {
+            transaction.update(
+                currentUserRef,
+                mapOf(
+                    "followingCount" to nextFollowingCount,
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                ),
+            )
+        } else {
+            transaction.set(
+                currentUserRef,
+                mapOf(
+                    "followingCount" to nextFollowingCount,
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                ),
+                SetOptions.merge(),
+            )
+        }
+
+        if (targetUserSnap.exists()) {
+            transaction.update(
+                targetUserRef,
+                mapOf(
+                    "followersCount" to nextFollowersCount,
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                ),
+            )
+        }
+
+        shouldFollow
     }
+        .addOnSuccessListener { isNowFollowing ->
+            onSuccess(isNowFollowing)
+        }
+        .addOnFailureListener { err ->
+            val isPermissionDenied = err.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+            onError(
+                if (isPermissionDenied) {
+                    "Izin update pengikut ditolak oleh Firestore Rules. Publikasikan aturan Firestore terbaru lalu coba lagi."
+                } else {
+                    err.localizedMessage ?: "Gagal memperbarui status mengikuti."
+                },
+            )
+        }
+}
+
+/** Validates and builds the Firestore update payload for editing a post caption. */
+internal fun updatedPostCaptionFields(newCaption: String): Map<String, Any>? {
+    val trimmed = newCaption.trim()
+    if (trimmed.isEmpty()) return null
+    return mapOf("caption" to trimmed)
+}
+
+/** Deletes the user's own post document from `posts/{documentId}` and syncs `postsCount`. */
+internal fun deleteUserPostFromFirestore(
+    user: FirebaseUser,
+    documentId: String,
+    onSuccess: () -> Unit = {},
+    onError: (String) -> Unit = {},
+) {
+    val cleanId = documentId.trim()
+    if (cleanId.isEmpty()) {
+        onError("ID postingan tidak valid.")
+        return
+    }
+    val db = FirebaseFirestore.getInstance()
+    db.collection("posts").document(cleanId)
+        .delete()
+        .addOnSuccessListener {
+            db.collection("posts")
+                .whereEqualTo("authorId", user.uid)
+                .get()
+                .addOnSuccessListener { snap ->
+                    db.collection("users").document(user.uid).set(
+                        mapOf(
+                            "postsCount" to snap.size(),
+                            "updatedAt" to FieldValue.serverTimestamp(),
+                        ),
+                        SetOptions.merge(),
+                    )
+                }
+            onSuccess()
+        }
+        .addOnFailureListener { err ->
+            val isPermissionDenied = err.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+            onError(
+                if (isPermissionDenied) {
+                    "Hapus postingan ditolak oleh Firestore Rules. Pastikan aturan delete pada koleksi posts sudah dipublikasikan."
+                } else {
+                    err.localizedMessage ?: "Gagal menghapus postingan."
+                },
+            )
+        }
+}
+
+/** Updates the caption of the user's own post in `posts/{documentId}`. */
+internal fun updateUserPostCaptionInFirestore(
+    documentId: String,
+    newCaption: String,
+    onSuccess: () -> Unit = {},
+    onError: (String) -> Unit = {},
+) {
+    val cleanId = documentId.trim()
+    val payload = updatedPostCaptionFields(newCaption)
+    if (cleanId.isEmpty() || payload == null) {
+        onError("Caption postingan tidak boleh kosong.")
+        return
+    }
+    FirebaseFirestore.getInstance()
+        .collection("posts")
+        .document(cleanId)
+        .update(payload)
+        .addOnSuccessListener { onSuccess() }
+        .addOnFailureListener { err ->
+            val isPermissionDenied = err.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+            onError(
+                if (isPermissionDenied) {
+                    "Edit postingan ditolak oleh Firestore Rules. Pastikan aturan update pada koleksi posts sudah dipublikasikan."
+                } else {
+                    err.localizedMessage ?: "Gagal memperbarui caption postingan."
+                },
+            )
+        }
 }
