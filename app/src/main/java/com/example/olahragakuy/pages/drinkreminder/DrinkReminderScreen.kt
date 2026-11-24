@@ -161,6 +161,13 @@ fun DrinkReminderScreen(
         }
     }
 
+    com.example.olahragakuy.ui.components.RegisterKuyRefresh {
+        refreshState()
+        if (!isPreview) {
+            hasNotificationPermission = DrinkReminderScheduler.hasPostNotificationsPermission(context)
+        }
+    }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->

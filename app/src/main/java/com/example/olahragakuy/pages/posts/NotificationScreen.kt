@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.posts
 
+import com.example.olahragakuy.ui.components.LocalKuyRefresh
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -161,6 +164,7 @@ fun NotificationScreen(
     initialSelectedPostId: String? = null,
     onUserProfileClick: (userId: String, displayName: String) -> Unit = { _, _ -> },
 ) {
+    val refreshRegistry = LocalKuyRefresh.current
     val isPreview = LocalInspectionMode.current
     var remoteNotifications by remember {
         mutableStateOf(if (isPreview) PreviewNotifications else emptyList())
@@ -198,14 +202,14 @@ fun NotificationScreen(
                 postsListener = db.collection("posts")
                     .orderBy("createdAt", Query.Direction.DESCENDING)
                     .limit(30)
-                    .addSnapshotListener { postSnap, postErr ->
+                    .addRefreshableSnapshotListener(refreshRegistry) { postSnap, postErr ->
                         loading = false
                         if (postErr != null && remoteNotifications.isEmpty()) {
                             val isDenied = postErr.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
                             if (!isDenied) {
                                 loadError = postErr.localizedMessage ?: "Gagal memuat notifikasi."
                             }
-                            return@addSnapshotListener
+                            return@addRefreshableSnapshotListener
                         }
                         val docs = postSnap?.documents.orEmpty()
                         val fromPosts = mutableListOf<NotificationUiModel>()
@@ -263,7 +267,7 @@ fun NotificationScreen(
                                 val cReg = doc.reference.collection("comments")
                                     .orderBy("createdAt", Query.Direction.DESCENDING)
                                     .limit(10)
-                                    .addSnapshotListener { cSnap, _ ->
+                                    .addRefreshableSnapshotListener(refreshRegistry) { cSnap, _ ->
                                         val commentNotifs = cSnap?.documents?.map { cDoc ->
                                             val cAuthor = cDoc.getString("authorName")?.takeIf { it.isNotBlank() }
                                                 ?: "Pengguna"
@@ -305,7 +309,7 @@ fun NotificationScreen(
                         .collection("notifications")
                         .orderBy("createdAt", Query.Direction.DESCENDING)
                         .limit(50)
-                        .addSnapshotListener { snapshot, error ->
+                        .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                             loading = false
                             if (error == null) {
                                 remoteNotifications = snapshot?.documents?.mapNotNull { doc ->
@@ -337,7 +341,7 @@ fun NotificationScreen(
                 postListener = FirebaseFirestore.getInstance()
                     .collection("posts")
                     .document(postId)
-                    .addSnapshotListener { snapshot, _ ->
+                    .addRefreshableSnapshotListener(refreshRegistry) { snapshot, _ ->
                         detailLoading = false
                         selectedPost = snapshot?.takeIf { it.exists() }?.toPostUiModel()
                     }

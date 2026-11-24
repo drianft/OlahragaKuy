@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.profile.user
 
+import com.example.olahragakuy.ui.components.LocalKuyRefresh
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -23,6 +26,7 @@ fun LoggedInProfileScreen(
     onLogout: () -> Unit,
     onTabSelected: (HomeNavTab) -> Unit = {},
 ) {
+    val refreshRegistry = LocalKuyRefresh.current
     val auth = remember { FirebaseAuth.getInstance() }
     var user by remember { mutableStateOf(auth.currentUser) }
     DisposableEffect(auth) {
@@ -64,7 +68,7 @@ fun LoggedInProfileScreen(
             val db = FirebaseFirestore.getInstance()
             val userRegistration = db.collection("users")
                 .document(currentUser.uid)
-                .addSnapshotListener { document, error ->
+                .addRefreshableSnapshotListener(refreshRegistry) { document, error ->
                     if (auth.currentUser?.uid == currentUser.uid) {
                         if (error != null) {
                             showError = true
@@ -85,7 +89,7 @@ fun LoggedInProfileScreen(
 
             val postsRegistration = db.collection("posts")
                 .whereEqualTo("authorId", currentUser.uid)
-                .addSnapshotListener { snapshot, _ ->
+                .addRefreshableSnapshotListener(refreshRegistry) { snapshot, _ ->
                     if (auth.currentUser?.uid == currentUser.uid && snapshot != null) {
                         userPosts = snapshot.documents.toSortedUserPosts()
                     }
@@ -93,7 +97,7 @@ fun LoggedInProfileScreen(
 
             val taggedRegistration = db.collection("posts")
                 .whereArrayContains("taggedFriendIds", currentUser.uid)
-                .addSnapshotListener { snapshot, _ ->
+                .addRefreshableSnapshotListener(refreshRegistry) { snapshot, _ ->
                     if (auth.currentUser?.uid == currentUser.uid && snapshot != null) {
                         taggedPosts = snapshot.documents.toSortedUserPosts()
                     }
@@ -102,7 +106,7 @@ fun LoggedInProfileScreen(
             val followersRegistration = db.collection("users")
                 .document(currentUser.uid)
                 .collection("followers")
-                .addSnapshotListener { snapshot, _ ->
+                .addRefreshableSnapshotListener(refreshRegistry) { snapshot, _ ->
                     if (auth.currentUser?.uid == currentUser.uid && snapshot != null) {
                         followersSubCount = snapshot.size()
                     }
@@ -111,7 +115,7 @@ fun LoggedInProfileScreen(
             val followingRegistration = db.collection("users")
                 .document(currentUser.uid)
                 .collection("following")
-                .addSnapshotListener { snapshot, _ ->
+                .addRefreshableSnapshotListener(refreshRegistry) { snapshot, _ ->
                     if (auth.currentUser?.uid == currentUser.uid && snapshot != null) {
                         followingSubCount = snapshot.size()
                     }

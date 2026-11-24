@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.training
 
+import com.example.olahragakuy.ui.components.RefreshRegistry
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -149,6 +152,7 @@ fun parseGuidedWorkoutDayFromMap(
 fun observeWorkoutFirestoreData(
     firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
     autoSeedIfEmpty: Boolean = true,
+    refreshRegistry: RefreshRegistry? = null,
 ): ListenerRegistration {
     WorkoutFirestoreStore.markLoading()
     val registrations = mutableListOf<ListenerRegistration>()
@@ -170,12 +174,12 @@ fun observeWorkoutFirestoreData(
 
     try {
         registrations += firestore.collection(WORKOUT_EXERCISES_COLLECTION)
-            .addSnapshotListener { snapshot, error ->
+            .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                 if (error != null) {
                     WorkoutFirestoreStore.setError(
                         error.localizedMessage ?: "Gagal memuat workout_exercises dari Firestore.",
                     )
-                    return@addSnapshotListener
+                    return@addRefreshableSnapshotListener
                 }
                 val parsed = snapshot?.documents.orEmpty().mapNotNull { doc ->
                     parseWorkoutExerciseFromMap(doc.id, doc.data.orEmpty())
@@ -189,12 +193,12 @@ fun observeWorkoutFirestoreData(
 
     try {
         registrations += firestore.collection(GUIDED_WORKOUT_DAYS_COLLECTION)
-            .addSnapshotListener { snapshot, error ->
+            .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                 if (error != null) {
                     WorkoutFirestoreStore.setError(
                         error.localizedMessage ?: "Gagal memuat guided_workout_days dari Firestore.",
                     )
-                    return@addSnapshotListener
+                    return@addRefreshableSnapshotListener
                 }
                 val parsed = snapshot?.documents.orEmpty().mapNotNull { doc ->
                     parseGuidedWorkoutDayFromMap(doc.id, doc.data.orEmpty())
@@ -269,6 +273,7 @@ fun parseGuidedWorkoutProgressFromMap(data: Map<String, Any?>): GuidedWorkoutPro
 fun observeUserGuidedProgress(
     userId: String,
     firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
+    refreshRegistry: RefreshRegistry? = null,
 ): ListenerRegistration {
     val cleanUserId = userId.trim()
     if (cleanUserId.isEmpty()) {
@@ -280,13 +285,13 @@ fun observeUserGuidedProgress(
     return try {
         firestore.collection("users")
             .document(cleanUserId)
-            .addSnapshotListener { snapshot, error ->
+            .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                 if (error != null) {
                     GuidedWorkoutProgressStore.setError(
                         cleanUserId,
                         error.localizedMessage ?: "Gagal memuat progres latihan dari Firestore.",
                     )
-                    return@addSnapshotListener
+                    return@addRefreshableSnapshotListener
                 }
                 val progress = if (snapshot != null && snapshot.exists()) {
                     parseGuidedWorkoutProgressFromMap(snapshot.data.orEmpty())

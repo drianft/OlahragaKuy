@@ -301,6 +301,7 @@ fun KuyPullToRefreshBox(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
+    indicatorModifier: Modifier = Modifier,
     contentAlignment: Alignment = Alignment.TopStart,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -317,7 +318,7 @@ fun KuyPullToRefreshBox(
                 isRefreshing = isRefreshing,
                 containerColor = Color(0xFF16324F),
                 color = KuyOrange,
-                modifier = Modifier.align(Alignment.TopCenter),
+                modifier = Modifier.align(Alignment.TopCenter).then(indicatorModifier),
             )
         },
         content = content,

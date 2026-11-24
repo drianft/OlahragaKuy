@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.posts
 
+import com.example.olahragakuy.ui.components.LocalKuyRefresh
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -651,6 +654,7 @@ fun ChatScreen(
     returnDirectlyOnBack: Boolean = false,
     onOpenVenueFinder: ((String) -> Unit)? = null,
 ) {
+    val refreshRegistry = LocalKuyRefresh.current
     val isPreview = LocalInspectionMode.current
     val initialPendingTarget = remember(isPreview, initialSelectedRoomId, initialDirectRoom) {
         if (isPreview || initialSelectedRoomId != null || initialDirectRoom != null) {
@@ -733,14 +737,14 @@ fun ChatScreen(
                     .collection(CHAT_COLLECTION)
                     .orderBy("updatedAt", Query.Direction.DESCENDING)
                     .limit(50)
-                    .addSnapshotListener { snap, error ->
+                    .addRefreshableSnapshotListener(refreshRegistry) { snap, error ->
                         if (error != null) {
                             Log.e(
                                 TAG_CHAT_SCREEN,
                                 "Gagal mendengarkan daftar chat: ${error.message}",
                                 error,
                             )
-                            return@addSnapshotListener
+                            return@addRefreshableSnapshotListener
                         }
                         if (snap != null) {
                             remoteRooms = snap.documents.mapNotNull { doc ->
@@ -799,6 +803,10 @@ fun ChatScreen(
             }
             onDispose { registration?.remove() }
         }
+    }
+
+    com.example.olahragakuy.ui.components.RegisterKuyRefresh {
+        if (!isPreview) followingFriends = refreshFirebaseFriends(currentUser?.uid, currentUserName)
     }
 
     val allRooms = remember(
@@ -1173,6 +1181,7 @@ private fun ChatDetailContent(
     onVenueDetailClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val refreshRegistry = LocalKuyRefresh.current
     val isPreview = LocalInspectionMode.current
     var messageInput by rememberSaveable(room.id) { mutableStateOf("") }
     var remoteMessages by remember(room.id) { mutableStateOf<List<ChatMessageUiModel>>(emptyList()) }
@@ -1187,14 +1196,14 @@ private fun ChatDetailContent(
                     .collection(CHAT_MESSAGES_SUBCOLLECTION)
                     .orderBy("createdAt", Query.Direction.ASCENDING)
                     .limitToLast(100)
-                    .addSnapshotListener { snap, error ->
+                    .addRefreshableSnapshotListener(refreshRegistry) { snap, error ->
                         if (error != null) {
                             Log.e(
                                 TAG_CHAT_SCREEN,
                                 "Gagal mendengarkan pesan room=${room.id}: ${error.message}",
                                 error,
                             )
-                            return@addSnapshotListener
+                            return@addRefreshableSnapshotListener
                         }
                         if (snap != null) {
                             val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
