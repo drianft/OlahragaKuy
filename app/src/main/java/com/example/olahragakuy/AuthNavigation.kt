@@ -34,6 +34,7 @@ import com.example.olahragakuy.pages.posts.SearchPostScreen
 import com.example.olahragakuy.pages.posts.currentUserOrNull
 import com.example.olahragakuy.pages.posts.ensureDirectChatRoom
 import com.example.olahragakuy.pages.posts.resolveDisplayName
+import com.example.olahragakuy.pages.drinkreminder.DrinkReminderScreen
 import com.example.olahragakuy.pages.profile.user.LoggedInProfileScreen
 import com.example.olahragakuy.pages.profile.user.OtherUserProfileScreen
 import com.example.olahragakuy.pages.training.CreateCustomWorkoutScreen
@@ -67,7 +68,12 @@ import com.google.firebase.firestore.FirebaseFirestore
 private const val HOME_DISSOLVE_MS = 300
 
 @Composable
-fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
+fun AuthNavigation(
+    modifier: Modifier = Modifier,
+    onExit: () -> Unit = {},
+    openDrinkReminder: Boolean = false,
+    onConsumeOpenDrinkReminder: () -> Unit = {},
+) {
     val navController = rememberNavController()
     var currentUserRole by rememberSaveable { mutableStateOf("member") }
     var prefilledEmail by rememberSaveable { mutableStateOf("") }
@@ -109,6 +115,26 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
             catalogRegistration?.remove()
             guidedProgressRegistration?.remove()
             customWorkoutRegistration?.remove()
+        }
+    }
+
+    LaunchedEffect(openDrinkReminder, currentUserRole) {
+        if (!openDrinkReminder) return@LaunchedEffect
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        val currentRoute = navController.currentDestination?.route
+        val isOnAuthScreen = currentRoute == "opening" || currentRoute == "login" || currentRoute == "register"
+        if (currentUser == null || isOnAuthScreen) {
+            onConsumeOpenDrinkReminder()
+            return@LaunchedEffect
+        }
+        val isVerifiedOrAdmin = currentUser.isEmailVerified || currentUserRole == "admin"
+        if (isVerifiedOrAdmin) {
+            onConsumeOpenDrinkReminder()
+            if (currentRoute != "drink_reminder") {
+                navController.navigate("drink_reminder") {
+                    launchSingleTop = true
+                }
+            }
         }
     }
 
@@ -362,6 +388,11 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                         launchSingleTop = true
                     }
                 },
+                onWaterReminderClick = {
+                    navController.navigate("drink_reminder") {
+                        launchSingleTop = true
+                    }
+                },
             )
         }
         composable("workout_rumahan") {
@@ -554,6 +585,15 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
             ExerciseDetailScreen(
                 exerciseKey = exerciseKey,
                 onBack = { navController.popBackStack() },
+            )
+        }
+        composable("drink_reminder") {
+            DrinkReminderScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navigateToTab(HomeNavTab.LATIHAN)
+                    }
+                },
             )
         }
         composable("profile") {

@@ -109,7 +109,7 @@ private val DefaultTrainingRoutines = listOf(
     TrainingRoutineUiModel(
         type = TrainingRoutineType.WATER_REMINDER,
         title = "Pengingat Minum",
-        description = "Jaga diri anda selalu terdehidrasi",
+        description = "Jaga diri anda selalu terhidrasi",
         gradientColors = listOf(Color(0xFF4C80C8), Color(0xFF8AB5EE)),
     ),
 )
@@ -123,6 +123,7 @@ fun TrainingHomeScreen(
     onTabSelected: (HomeNavTab) -> Unit = {},
     onRoutineClick: (TrainingRoutineType) -> Unit = {},
     onHomeWorkoutClick: (() -> Unit)? = null,
+    onWaterReminderClick: (() -> Unit)? = null,
 ) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -169,10 +170,16 @@ fun TrainingHomeScreen(
                         routine = routine,
                         onClick = {
                             onRoutineClick(routine.type)
-                            if (routine.type == TrainingRoutineType.HOME_WORKOUT && onHomeWorkoutClick != null) {
-                                onHomeWorkoutClick()
-                            } else {
-                                notice = "Fitur ${routine.title} segera hadir."
+                            when {
+                                routine.type == TrainingRoutineType.HOME_WORKOUT && onHomeWorkoutClick != null -> {
+                                    onHomeWorkoutClick()
+                                }
+                                routine.type == TrainingRoutineType.WATER_REMINDER && onWaterReminderClick != null -> {
+                                    onWaterReminderClick()
+                                }
+                                else -> {
+                                    notice = "Fitur ${routine.title} segera hadir."
+                                }
                             }
                         },
                     )
