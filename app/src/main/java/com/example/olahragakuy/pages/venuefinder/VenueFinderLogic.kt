@@ -27,28 +27,93 @@ fun filterActiveVenues(venues: List<VenueUiModel>): List<VenueUiModel> =
     venues.filter { it.isActive }
 
 /**
- * Memfilter venue aktif berdasarkan kata kunci pencarian pada nama, kategori olahraga,
- * alamat, atau deskripsi singkat.
+ * Memeriksa apakah [venue] cocok dengan filter jenis olahraga [sportFilter] secara
+ * case-insensitive dengan dukungan sinonim umum (misal futsal, bulu tangkis, fitness, lari).
+ */
+fun matchesSportFilter(
+    venue: VenueUiModel,
+    sportFilter: VenueSportFilter,
+): Boolean {
+    if (sportFilter == VenueSportFilter.ALL) return true
+
+    val normalizedCategory = normalizeFilterText(venue.sportCategory)
+    val targetText = if (normalizedCategory.isNotEmpty() && normalizedCategory != "olahraga") {
+        normalizedCategory
+    } else {
+        normalizeFilterText("${venue.sportCategory} ${venue.name}")
+    }
+    return targetText.isNotEmpty() && sportFilter.keywords.any { keyword ->
+        containsWholeKeyword(targetText, keyword)
+    }
+}
+
+/**
+ * Memeriksa apakah jarak Haversine dari [userLocation] (atau fallback [DefaultUsuCoordinate]
+ * jika tidak valid) menuju [venue] masih berada dalam batas [radiusFilter].
+ */
+fun matchesRadiusFilter(
+    venue: VenueUiModel,
+    radiusFilter: VenueRadiusFilter,
+    userLocation: GeoCoordinate? = DefaultUsuCoordinate,
+): Boolean {
+    val maxDistanceMeters = radiusFilter.maxDistanceMeters ?: return true
+    val effectiveOrigin = resolveUserCoordinate(userLocation).first
+    return haversineDistanceMeters(effectiveOrigin, venue.coordinate) <= maxDistanceMeters
+}
+
+/**
+ * Memfilter venue aktif dengan menggabungkan (logika AND):
+ * 1. Kata kunci pencarian teks pada nama, kategori olahraga, alamat, atau deskripsi singkat.
+ * 2. Jenis olahraga ([sportFilter], case-insensitive + sinonim).
+ * 3. Radius jarak Haversine ([radiusFilter]) dari [userLocation] / fallback USU Medan.
  */
 fun filterVenues(
     venues: List<VenueUiModel>,
-    query: String,
+    query: String = "",
+    sportFilter: VenueSportFilter = VenueSportFilter.ALL,
+    radiusFilter: VenueRadiusFilter = VenueRadiusFilter.ALL,
+    userLocation: GeoCoordinate? = DefaultUsuCoordinate,
 ): List<VenueUiModel> {
     val activeVenues = filterActiveVenues(venues)
     val tokens = query.trim().lowercase(Locale.ROOT)
         .split(Regex("\\s+"))
         .filter { it.isNotEmpty() }
-    if (tokens.isEmpty()) return activeVenues
+    val effectiveOrigin = if (radiusFilter.maxDistanceMeters != null) {
+        resolveUserCoordinate(userLocation).first
+    } else {
+        null
+    }
 
     return activeVenues.filter { venue ->
-        val searchable = buildString {
-            append(venue.name).append(' ')
-            append(venue.sportCategory).append(' ')
-            append(venue.address).append(' ')
-            append(venue.shortDescription)
-        }.lowercase(Locale.ROOT)
-        tokens.all { token -> searchable.contains(token) }
+        val matchesText = if (tokens.isEmpty()) {
+            true
+        } else {
+            val searchable = buildString {
+                append(venue.name).append(' ')
+                append(venue.sportCategory).append(' ')
+                append(venue.address).append(' ')
+                append(venue.shortDescription)
+            }.lowercase(Locale.ROOT)
+            tokens.all { token -> searchable.contains(token) }
+        }
+
+        val matchesSport = matchesSportFilter(venue, sportFilter)
+        val matchesRadius = effectiveOrigin?.let { origin ->
+            matchesRadiusFilter(venue, radiusFilter, origin)
+        } ?: true
+
+        matchesText && matchesSport && matchesRadius
     }
+}
+
+private val WhitespaceRegex = Regex("\\s+")
+
+private fun normalizeFilterText(raw: String): String =
+    raw.trim().lowercase(Locale.ROOT).replace(WhitespaceRegex, " ")
+
+private fun containsWholeKeyword(normalizedText: String, keyword: String): Boolean {
+    val pattern = Regex("(^|[^a-z0-9])${Regex.escape(keyword)}($|[^a-z0-9])")
+    return pattern.containsMatchIn(normalizedText)
 }
 
 /**
