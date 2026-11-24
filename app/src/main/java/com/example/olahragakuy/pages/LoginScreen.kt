@@ -1,7 +1,6 @@
 package com.example.olahragakuy.pages
 
 import android.util.Patterns
-import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +19,7 @@ import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.olahragakuy.R
+import com.example.olahragakuy.ui.components.KuyGoogleAuthButton
 import com.example.olahragakuy.ui.components.KuyPasswordVisibilityToggle
 import com.example.olahragakuy.ui.components.KuyPrimaryButton
 import com.example.olahragakuy.ui.components.KuySuccessPopupOverlay
@@ -45,6 +46,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.example.olahragakuy.pages.profile.user.ensureUserProfile
+import kotlinx.coroutines.launch
 
 /** Figma Login 5:2002. Android supplies its own status and navigation bars. */
 @Composable
@@ -65,20 +67,23 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var attempted by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
+    var googleLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var credentialsError by remember { mutableStateOf(false) }
     var serverEmailError by remember { mutableStateOf<String?>(null) }
-    var serverPasswordError by remember { mutableStateOf<String?>(null) }
-    var noticeTitle by remember { mutableStateOf("Belum tersedia") }
+    var noticeTitle by remember { mutableStateOf("Informasi") }
     var notice by remember { mutableStateOf<String?>(null) }
     var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
     var loggedInRole by rememberSaveable { mutableStateOf("member") }
+    val busy = loading || googleLoading
 
     var showForgotPasswordDialog by rememberSaveable { mutableStateOf(false) }
     var resetEmail by rememberSaveable { mutableStateOf("") }
     var resetLoading by remember { mutableStateOf(false) }
     var resetEmailError by remember { mutableStateOf<String?>(null) }
 
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
 
     val emailError = when {
@@ -89,21 +94,16 @@ fun LoginScreen(
             "Masukkan format email yang valid untuk masuk."
         else -> null
     }
-    val passwordError = when {
-        serverPasswordError != null -> serverPasswordError
-        attempted && password.isEmpty() -> "Isi kata sandi terlebih dahulu."
-        else -> null
-    }
+    val passwordError = if (attempted && password.isEmpty()) "Isi kata sandi terlebih dahulu." else null
 
     val submit = {
         attempted = true
         serverEmailError = null
-        serverPasswordError = null
         credentialsError = false
         error = null
         val trimmedEmail = email.trim()
         val isEmailValid = trimmedEmail.isNotEmpty() && Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()
-        if (isEmailValid && password.isNotEmpty() && !loading) {
+        if (isEmailValid && password.isNotEmpty() && !busy) {
             focus.clearFocus()
             passwordVisible = false
             loading = true
@@ -177,6 +177,32 @@ fun LoginScreen(
         }
     }
 
+    val submitGoogleSignIn: () -> Unit = {
+        if (!busy) {
+            focus.clearFocus()
+            passwordVisible = false
+            attempted = false
+            serverEmailError = null
+            credentialsError = false
+            error = null
+            googleLoading = true
+            coroutineScope.launch {
+                val result = signInWithGoogle(context)
+                googleLoading = false
+                when (result) {
+                    is GoogleSignInResult.Success -> {
+                        loggedInRole = result.role
+                        showSuccessPopup = true
+                    }
+                    GoogleSignInResult.Cancelled -> Unit
+                    is GoogleSignInResult.Error -> {
+                        error = result.message
+                    }
+                }
+            }
+        }
+    }
+
     val submitResetPassword = {
         val trimmedResetEmail = resetEmail.trim()
         resetEmailError = when {
@@ -232,7 +258,7 @@ fun LoginScreen(
                     Surface(
                         shape = RoundedCornerShape(24.dp),
                         color = KuyBlue, contentColor = KuyText, shadowElevation = 2.dp,
-                        modifier = Modifier.widthIn(min = 128.dp).heightIn(min = 40.dp).clickable(enabled = !loading, onClick = onBack),
+                        modifier = Modifier.widthIn(min = 128.dp).heightIn(min = 40.dp).clickable(enabled = !busy, onClick = onBack),
                     ) {
                         Row(
                             Modifier.padding(horizontal = 17.5.dp),
@@ -265,7 +291,7 @@ fun LoginScreen(
                     KuyTextField(
                         email,
                         {
-                            if (!loading) {
+                            if (!busy) {
                                 email = it.take(254)
                                 serverEmailError = null
                                 credentialsError = false
@@ -286,9 +312,8 @@ fun LoginScreen(
                     KuyTextField(
                         password,
                         {
-                            if (!loading) {
+                            if (!busy) {
                                 password = it.take(128)
-                                serverPasswordError = null
                                 credentialsError = false
                                 error = null
                             }
@@ -303,8 +328,8 @@ fun LoginScreen(
                         trailingContent = {
                             KuyPasswordVisibilityToggle(
                                 visible = passwordVisible,
-                                onToggle = { if (!loading) passwordVisible = !passwordVisible },
-                                enabled = !loading,
+                                onToggle = { if (!busy) passwordVisible = !passwordVisible },
+                                enabled = !busy,
                                 modifier = Modifier.testTag("password-toggle"),
                             )
                         },
@@ -320,7 +345,7 @@ fun LoginScreen(
                         style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier
                             .testTag("forgot-password")
-                            .clickable(enabled = !loading) {
+                            .clickable(enabled = !busy) {
                                 resetEmail = email.trim()
                                 resetEmailError = null
                                 showForgotPasswordDialog = true
@@ -339,7 +364,7 @@ fun LoginScreen(
                     if (loading) "Memproses..." else "Masuk",
                     submit,
                     Modifier.testTag("login-submit"),
-                    enabled = !loading
+                    enabled = !busy
                 )
                 Row(
                     Modifier.fillMaxWidth(),
@@ -349,26 +374,18 @@ fun LoginScreen(
                     Text("Belum Mempunyai Akun?", style = MaterialTheme.typography.bodySmall)
                     Text(
                         "Daftar", color = KuyOrange, style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.clickable(enabled = !loading, onClick = onRegistered)
+                        modifier = Modifier.clickable(enabled = !busy, onClick = onRegistered)
                     )
                 }
                 Spacer(Modifier.height((69 * gapScale).dp))
                 Text("Atau Masuk Dengan", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    SocialButton(R.drawable.login_google, "Google", 37, !loading) {
-                        noticeTitle = "Belum tersedia"
-                        notice = "Masuk dengan Google belum tersedia."
-                    }
-                    SocialButton(R.drawable.login_facebook, "Facebook", 36, !loading) {
-                        noticeTitle = "Belum tersedia"
-                        notice = "Masuk dengan Facebook belum tersedia."
-                    }
-                    SocialButton(R.drawable.login_instagram, "Instagram", 37, !loading) {
-                        noticeTitle = "Belum tersedia"
-                        notice = "Masuk dengan Instagram belum tersedia."
-                    }
-                }
+                KuyGoogleAuthButton(
+                    onClick = submitGoogleSignIn,
+                    text = if (googleLoading) "Memproses..." else "Masuk dengan Google",
+                    modifier = Modifier.testTag("google-login"),
+                    enabled = !busy,
+                )
                 Spacer(Modifier.height((136 * gapScale).dp))
             }
         }
@@ -479,18 +496,6 @@ fun LoginScreen(
             onLoggedIn(loggedInRole)
         },
     )
-}
-
-@Composable
-private fun SocialButton(@DrawableRes icon: Int, provider: String, iconSize: Int, enabled: Boolean = true, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick, enabled = enabled, modifier = Modifier.size(60.dp), shape = RoundedCornerShape(12.dp),
-        color = Color.White, shadowElevation = 2.dp
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Image(painterResource(icon), "Masuk dengan $provider", Modifier.size(iconSize.dp))
-        }
-    }
 }
 
 @Preview(name = "Login reference", widthDp = 440, heightDp = 906, showBackground = true)

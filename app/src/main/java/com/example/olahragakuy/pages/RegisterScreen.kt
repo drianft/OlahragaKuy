@@ -1,7 +1,6 @@
 package com.example.olahragakuy.pages
 
 import android.util.Patterns
-import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -17,7 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -33,6 +32,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.R
+import com.example.olahragakuy.ui.components.KuyGoogleAuthButton
 import com.example.olahragakuy.ui.components.KuyPasswordVisibilityToggle
 import com.example.olahragakuy.ui.components.KuySuccessPopupOverlay
 import com.example.olahragakuy.ui.components.KuyTextField
@@ -45,6 +45,7 @@ import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.example.olahragakuy.pages.profile.user.ensureUserProfile
+import kotlinx.coroutines.launch
 
 @Composable
 fun RegisterScreen(
@@ -52,6 +53,7 @@ fun RegisterScreen(
     onRegistered: () -> Unit,
     onLogin: () -> Unit = onBack,
     onRegisteredWithEmail: (String) -> Unit = {},
+    onGoogleSignedIn: (String) -> Unit = {},
 ) {
     var username by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
@@ -63,11 +65,18 @@ fun RegisterScreen(
     var confirmationVisible by remember { mutableStateOf(false) }
     var attempted by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
+    var googleLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var serverEmailError by remember { mutableStateOf<String?>(null) }
     var serverPasswordError by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     var showSuccessPopup by rememberSaveable { mutableStateOf(false) }
+    var showGoogleSuccessPopup by rememberSaveable { mutableStateOf(false) }
+    var googleSignedInRole by rememberSaveable { mutableStateOf("member") }
+    var googleIsNewUser by rememberSaveable { mutableStateOf(true) }
+    val busy = loading || googleLoading
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
 
     val usernameRegex = remember { Regex("^[a-zA-Z0-9._]+$") }
@@ -120,7 +129,7 @@ fun RegisterScreen(
             isPasswordValid &&
             password == confirmation
 
-        if (isFormValid && !loading) {
+        if (isFormValid && !busy) {
             focus.clearFocus()
             passwordVisible = false
             confirmationVisible = false
@@ -192,6 +201,36 @@ fun RegisterScreen(
         }
     }
 
+    val submitGoogleSignIn: () -> Unit = {
+        if (!busy) {
+            focus.clearFocus()
+            passwordVisible = false
+            confirmationVisible = false
+            attempted = false
+            serverEmailError = null
+            serverPasswordError = null
+            error = null
+            googleLoading = true
+            coroutineScope.launch {
+                val result = signInWithGoogle(context)
+                googleLoading = false
+                when (result) {
+                    is GoogleSignInResult.Success -> {
+                        password = ""
+                        confirmation = ""
+                        googleSignedInRole = result.role
+                        googleIsNewUser = result.isNewUser
+                        showGoogleSuccessPopup = true
+                    }
+                    GoogleSignInResult.Cancelled -> Unit
+                    is GoogleSignInResult.Error -> {
+                        error = result.message
+                    }
+                }
+            }
+        }
+    }
+
     Box(
         Modifier.fillMaxSize().background(KuyNavy).testTag("register-screen")
             .safeDrawingPadding().imePadding(),
@@ -207,7 +246,7 @@ fun RegisterScreen(
                 Spacer(Modifier.height((10 * gapScale).dp))
                 Box(Modifier.fillMaxWidth()) {
                     Surface(
-                        onClick = onBack, enabled = !loading,
+                        onClick = onBack, enabled = !busy,
                         modifier = Modifier.widthIn(min = 128.dp).heightIn(min = 40.dp),
                         shape = RoundedCornerShape(24.dp), color = KuyBlue, contentColor = KuyText,
                     ) {
@@ -239,7 +278,7 @@ fun RegisterScreen(
                         KuyTextField(
                             username,
                             {
-                                if (!loading) {
+                                if (!busy) {
                                     username = it.take(24)
                                     error = null
                                 }
@@ -272,7 +311,7 @@ fun RegisterScreen(
                         KuyTextField(
                             email,
                             {
-                                if (!loading) {
+                                if (!busy) {
                                     email = it.take(254)
                                     serverEmailError = null
                                     error = null
@@ -301,7 +340,7 @@ fun RegisterScreen(
                         KuyTextField(
                             password,
                             {
-                                if (!loading) {
+                                if (!busy) {
                                     password = it.take(128)
                                     serverPasswordError = null
                                     error = null
@@ -317,8 +356,8 @@ fun RegisterScreen(
                             trailingContent = {
                                 KuyPasswordVisibilityToggle(
                                     visible = passwordVisible,
-                                    onToggle = { if (!loading) passwordVisible = !passwordVisible },
-                                    enabled = !loading,
+                                    onToggle = { if (!busy) passwordVisible = !passwordVisible },
+                                    enabled = !busy,
                                     modifier = Modifier.testTag("register-password-toggle"),
                                 )
                             },
@@ -344,7 +383,7 @@ fun RegisterScreen(
                         KuyTextField(
                             confirmation,
                             {
-                                if (!loading) {
+                                if (!busy) {
                                     confirmation = it.take(128)
                                     error = null
                                 }
@@ -359,8 +398,8 @@ fun RegisterScreen(
                             trailingContent = {
                                 KuyPasswordVisibilityToggle(
                                     visible = confirmationVisible,
-                                    onToggle = { if (!loading) confirmationVisible = !confirmationVisible },
-                                    enabled = !loading,
+                                    onToggle = { if (!busy) confirmationVisible = !confirmationVisible },
+                                    enabled = !busy,
                                     modifier = Modifier.testTag("register-confirmation-toggle"),
                                 )
                             },
@@ -387,7 +426,7 @@ fun RegisterScreen(
                 }
                 Spacer(Modifier.height((58 * gapScale).dp))
                 Button(
-                    onClick = submit, enabled = !loading,
+                    onClick = submit, enabled = !busy,
                     modifier = Modifier.fillMaxWidth().height(60.dp).testTag("register-submit"),
                     shape = RoundedCornerShape(36.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = KuyButton, contentColor = KuyText),
@@ -400,24 +439,19 @@ fun RegisterScreen(
                 ) {
                     Text("Sudah Mempunyai Akun?", style = MaterialTheme.typography.bodySmall)
                     TextButton(
-                        onClick = onLogin, enabled = !loading, contentPadding = PaddingValues(0.dp),
+                        onClick = onLogin, enabled = !busy, contentPadding = PaddingValues(0.dp),
                         colors = ButtonDefaults.textButtonColors(contentColor = KuyOrange),
                     ) { Text("Masuk", style = MaterialTheme.typography.labelLarge) }
                 }
                 Spacer(Modifier.height((45 * gapScale).dp))
-                Text("Atau Daftar Dengan", style = MaterialTheme.typography.bodySmall)
+                Text("Atau Masuk Dengan", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    RegisterSocialButton(R.drawable.login_google, "Google", 37, !loading) {
-                        notice = "Pendaftaran dengan Google belum tersedia."
-                    }
-                    RegisterSocialButton(R.drawable.login_facebook, "Facebook", 36, !loading) {
-                        notice = "Pendaftaran dengan Facebook belum tersedia."
-                    }
-                    RegisterSocialButton(R.drawable.login_instagram, "Instagram", 37, !loading) {
-                        notice = "Pendaftaran dengan Instagram belum tersedia."
-                    }
-                }
+                KuyGoogleAuthButton(
+                    onClick = submitGoogleSignIn,
+                    text = if (googleLoading) "Memproses..." else "Masuk dengan Google",
+                    modifier = Modifier.testTag("google-register"),
+                    enabled = !busy,
+                )
                 Spacer(Modifier.height((100 * gapScale).dp))
             }
         }
@@ -438,20 +472,19 @@ fun RegisterScreen(
             onRegistered()
         },
     )
-}
-
-@Composable
-private fun RegisterSocialButton(
-    @DrawableRes icon: Int, provider: String, iconSize: Int, enabled: Boolean, onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick, enabled = enabled, modifier = Modifier.size(60.dp),
-        shape = RoundedCornerShape(12.dp), color = Color.White,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Image(painterResource(icon), "Daftar dengan $provider", Modifier.size(iconSize.dp))
-        }
-    }
+    KuySuccessPopupOverlay(
+        visible = showGoogleSuccessPopup,
+        illustrationRes = if (googleIsNewUser) R.drawable.daftar_amico else R.drawable.masuk_amico,
+        subtitle = if (googleIsNewUser) {
+            "akun Google Anda berhasil didaftarkan"
+        } else {
+            "proses masuk dengan Google berhasil"
+        },
+        onContinue = {
+            showGoogleSuccessPopup = false
+            onGoogleSignedIn(googleSignedInRole)
+        },
+    )
 }
 
 @Preview(name = "Register reference", widthDp = 440, heightDp = 956, showSystemUi = true)
