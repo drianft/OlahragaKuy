@@ -72,6 +72,8 @@ fun GuidedWorkoutDaysScreen(
     errorMessage: String? = WorkoutFirestoreStore.errorMessage,
     isSeeding: Boolean = WorkoutFirestoreStore.isSeeding,
     seedMessage: String? = WorkoutFirestoreStore.seedMessage,
+    currentUserId: String? = GuidedWorkoutProgressStore.activeUserId,
+    isLoadingProgress: Boolean = GuidedWorkoutProgressStore.isLoading,
     highestUnlockedDay: Int = GuidedWorkoutProgressStore.highestUnlockedDay,
     completedDays: Set<Int> = GuidedWorkoutProgressStore.completedDays,
     onBack: () -> Unit = {},
@@ -79,7 +81,7 @@ fun GuidedWorkoutDaysScreen(
     onDayClick: (Int) -> Unit = {},
     onSeedClick: () -> Unit = { WorkoutCatalogSeeder.seedToFirestore(onlyIfEmpty = false) },
 ) {
-    var lockedNotice by rememberSaveable { mutableStateOf<String?>(null) }
+    var lockedNotice by rememberSaveable(currentUserId) { mutableStateOf<String?>(null) }
     val columns = 7
     val dayRows = days.sortedBy { it.dayNumber }.chunked(columns)
 
@@ -124,10 +126,10 @@ fun GuidedWorkoutDaysScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             when {
-                isLoading && days.isEmpty() -> {
+                (isLoading && days.isEmpty()) || isLoadingProgress -> {
                     FirestoreStatusCard(
                         title = "Memuat dari Firestore...",
-                        description = "Mengambil daftar hari dan panduan latihan langsung dari Cloud Firestore.",
+                        description = "Mengambil daftar hari dan progres akun dari Cloud Firestore.",
                         showProgress = true,
                         actionLabel = null,
                         onActionClick = {},
@@ -216,7 +218,7 @@ fun GuidedWorkoutDaysScreen(
 }
 
 @Composable
-private fun FirestoreStatusCard(
+internal fun FirestoreStatusCard(
     title: String,
     description: String,
     showProgress: Boolean,
@@ -503,7 +505,7 @@ fun GuidedWorkoutDetailScreen(
 }
 
 @Composable
-private fun WorkoutMetricColumn(
+internal fun WorkoutMetricColumn(
     value: String,
     label: String,
     modifier: Modifier = Modifier,
@@ -528,7 +530,7 @@ private fun WorkoutMetricColumn(
 }
 
 @Composable
-private fun GuidedExerciseCard(
+internal fun GuidedExerciseCard(
     exerciseName: String,
     targetLabel: String,
     exerciseType: ExerciseType,
@@ -721,6 +723,7 @@ private fun GuidedWorkoutDaysScreenPreview() {
         GuidedWorkoutDaysScreen(
             days = WorkoutCatalogSeeder.buildSeedGuidedDays(),
             isLoading = false,
+            isLoadingProgress = false,
             errorMessage = null,
             isSeeding = false,
             seedMessage = null,

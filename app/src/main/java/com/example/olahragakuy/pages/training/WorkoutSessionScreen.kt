@@ -441,7 +441,7 @@ private fun WorkoutQuitCard(
 }
 
 @Composable
-private fun WorkoutCompletedIllustration(modifier: Modifier = Modifier) {
+internal fun WorkoutCompletedIllustration(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
         drawCompletedIllustration()
     }

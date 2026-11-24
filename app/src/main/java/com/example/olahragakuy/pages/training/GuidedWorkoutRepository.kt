@@ -3,9 +3,12 @@ package com.example.olahragakuy.pages.training
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 
 const val WORKOUT_EXERCISES_COLLECTION = "workout_exercises"
 const val GUIDED_WORKOUT_DAYS_COLLECTION = "guided_workout_days"
+const val FIELD_GUIDED_HIGHEST_DAY = "guidedHighestUnlockedDay"
+const val FIELD_GUIDED_COMPLETED_DAYS = "guidedCompletedDays"
 
 fun guidedWorkoutDayDocId(dayNumber: Int): String =
     "day_%02d".format(dayNumber.coerceIn(1, GUIDED_WORKOUT_TOTAL_DAYS))
@@ -210,5 +213,124 @@ fun observeWorkoutFirestoreData(
             } catch (_: Exception) {
             }
         }
+    }
+}
+
+fun GuidedWorkoutProgress.toUserFieldsMap(includeServerTimestamp: Boolean = false): Map<String, Any> {
+    val sanitizedDays = completedDays
+        .filter { it in 1..GUIDED_WORKOUT_TOTAL_DAYS }
+        .distinct()
+        .sorted()
+    val highestFromCompleted = sanitizedDays.maxOrNull()
+        ?.let { (it + 1).coerceAtMost(GUIDED_WORKOUT_TOTAL_DAYS) }
+        ?: 1
+    val safeHighest = maxOf(
+        highestUnlockedDay.coerceIn(1, GUIDED_WORKOUT_TOTAL_DAYS),
+        highestFromCompleted,
+    )
+    val map = linkedMapOf<String, Any>(
+        FIELD_GUIDED_HIGHEST_DAY to safeHighest,
+        FIELD_GUIDED_COMPLETED_DAYS to sanitizedDays,
+    )
+    if (includeServerTimestamp) {
+        map["updatedAt"] = FieldValue.serverTimestamp()
+    }
+    return map
+}
+
+fun parseGuidedWorkoutProgressFromMap(data: Map<String, Any?>): GuidedWorkoutProgress {
+    val rawCompleted = (data[FIELD_GUIDED_COMPLETED_DAYS] as? List<*>)
+        ?: (data["completedDays"] as? List<*>)
+    val completedDays = rawCompleted
+        .orEmpty()
+        .mapNotNull { (it as? Number)?.toInt() }
+        .filter { it in 1..GUIDED_WORKOUT_TOTAL_DAYS }
+        .toSet()
+    val highestFromCompleted = completedDays.maxOrNull()
+        ?.let { (it + 1).coerceAtMost(GUIDED_WORKOUT_TOTAL_DAYS) }
+        ?: 1
+    val rawHighest = (data[FIELD_GUIDED_HIGHEST_DAY] as? Number)?.toInt()
+        ?: (data["highestUnlockedDay"] as? Number)?.toInt()
+        ?: 1
+    val safeHighest = maxOf(
+        rawHighest.coerceIn(1, GUIDED_WORKOUT_TOTAL_DAYS),
+        highestFromCompleted,
+    )
+    return GuidedWorkoutProgress(
+        highestUnlockedDay = safeHighest,
+        completedDays = completedDays,
+    )
+}
+
+/**
+ * Mengamati progres Latihan Terarah khusus untuk akun [userId] langsung dari dokumen
+ * koleksi `users/{userId}`.
+ */
+fun observeUserGuidedProgress(
+    userId: String,
+    firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
+): ListenerRegistration {
+    val cleanUserId = userId.trim()
+    if (cleanUserId.isEmpty()) {
+        GuidedWorkoutProgressStore.reset()
+        return ListenerRegistration { }
+    }
+
+    GuidedWorkoutProgressStore.bindUser(cleanUserId)
+    return try {
+        firestore.collection("users")
+            .document(cleanUserId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    GuidedWorkoutProgressStore.setError(
+                        cleanUserId,
+                        error.localizedMessage ?: "Gagal memuat progres latihan dari Firestore.",
+                    )
+                    return@addSnapshotListener
+                }
+                val progress = if (snapshot != null && snapshot.exists()) {
+                    parseGuidedWorkoutProgressFromMap(snapshot.data.orEmpty())
+                } else {
+                    GuidedWorkoutProgress()
+                }
+                GuidedWorkoutProgressStore.applyFromFirestore(cleanUserId, progress)
+            }
+    } catch (e: Exception) {
+        GuidedWorkoutProgressStore.setError(
+            cleanUserId,
+            e.localizedMessage ?: "Gagal terhubung ke Firestore.",
+        )
+        ListenerRegistration { }
+    }
+}
+
+/**
+ * Menyimpan penyelesaian hari Latihan Terarah langsung ke dokumen akun `users/{userId}`.
+ */
+fun completeGuidedWorkoutDayForUser(
+    userId: String,
+    dayNumber: Int,
+    firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
+    onResult: (Boolean, String?) -> Unit = { _, _ -> },
+) {
+    val cleanUserId = userId.trim()
+    if (cleanUserId.isEmpty()) {
+        onResult(false, "Akun belum login.")
+        return
+    }
+    if (GuidedWorkoutProgressStore.activeUserId != cleanUserId) {
+        GuidedWorkoutProgressStore.bindUser(cleanUserId)
+    }
+    val updated = GuidedWorkoutProgressStore.completeDay(dayNumber)
+    try {
+        firestore.collection("users")
+            .document(cleanUserId)
+            .set(updated.toUserFieldsMap(includeServerTimestamp = true), SetOptions.merge())
+            .addOnSuccessListener { onResult(true, null) }
+            .addOnFailureListener { err ->
+                onResult(false, err.localizedMessage ?: "Gagal menyimpan progres latihan.")
+            }
+    } catch (e: Exception) {
+        onResult(false, e.localizedMessage ?: "Gagal menyimpan progres latihan.")
     }
 }

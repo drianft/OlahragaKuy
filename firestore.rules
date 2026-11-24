@@ -68,6 +68,26 @@ rules_version = '2';
 //   - exercises: list<map> (required, 1..30 items)
 //   - isActive: bool (required)
 //   - updatedAt: timestamp (optional, == request.time)
+//
+// Collection: chats/{chatId}
+// Fields:
+//   - name: string (required, 1..100 chars)
+//   - isGroup: bool (required)
+//   - statusOrMembers, lastMessage, dateLabel: string (optional)
+//   - participantIds, participantNames: list<string> (optional)
+//   - updatedAt: timestamp (optional)
+//
+// Subcollection: chats/{chatId}/messages/{messageId}
+// Fields:
+//   - senderId: string (required, == request.auth.uid)
+//   - senderName: string (required, 1..100 chars)
+//   - text: string (required, 1..2000 chars)
+//   - timeText: string (optional, <= 32 chars)
+//   - venueInvite: map (optional, must contain non-blank title string)
+//   - createdAt: timestamp (required)
+//
+// Collection: venues/{venueId}
+// Read-only for authenticated users.
 // ===============================================================
 
 service cloud.firestore {
@@ -134,6 +154,25 @@ service cloud.firestore {
         && data.createdAt == request.time;
     }
 
+    function isValidVenueInvite(invite) {
+      return invite is map
+        && invite.keys().hasAll(['title'])
+        && invite.keys().hasOnly([
+          'venueId', 'title', 'sport', 'description',
+          'imageUrl', 'latitude', 'longitude'
+        ])
+        && invite.title is string
+        && invite.title.size() > 0
+        && invite.title.size() <= 200
+        && invite.title.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && (!('venueId' in invite) || (invite.venueId is string && invite.venueId.size() <= 128))
+        && (!('sport' in invite) || (invite.sport is string && invite.sport.size() <= 100))
+        && (!('description' in invite) || (invite.description is string && invite.description.size() <= 1000))
+        && (!('imageUrl' in invite) || (invite.imageUrl is string && invite.imageUrl.size() <= 1000))
+        && (!('latitude' in invite) || (invite.latitude is number && invite.latitude >= -90 && invite.latitude <= 90))
+        && (!('longitude' in invite) || (invite.longitude is number && invite.longitude >= -180 && invite.longitude <= 180));
+    }
+
     match /users/{userId} {
       function validFollowerCountUpdate() {
         let next = request.resource.data;
@@ -148,9 +187,17 @@ service cloud.firestore {
 
       allow read: if isAuthenticated();
       allow create: if isOwner(userId)
-        && hasOnlyAllowedFields(['displayName', 'username', 'name', 'bio', 'photoUrl', 'avatarUrl', 'followersCount', 'followingCount', 'postsCount', 'updatedAt']);
+        && hasOnlyAllowedFields([
+          'displayName', 'username', 'name', 'bio', 'photoUrl', 'avatarUrl',
+          'followersCount', 'followingCount', 'postsCount',
+          'guidedHighestUnlockedDay', 'guidedCompletedDays', 'updatedAt'
+        ]);
       allow update: if (isOwner(userId)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'username', 'name', 'bio', 'photoUrl', 'avatarUrl', 'followersCount', 'followingCount', 'postsCount', 'updatedAt']))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'displayName', 'username', 'name', 'bio', 'photoUrl', 'avatarUrl',
+            'followersCount', 'followingCount', 'postsCount',
+            'guidedHighestUnlockedDay', 'guidedCompletedDays', 'updatedAt'
+          ]))
         || validFollowerCountUpdate();
       allow delete: if false;
 
@@ -171,6 +218,18 @@ service cloud.firestore {
       match /notifications/{notificationId} {
         allow read, delete: if isOwner(userId);
         allow create, update: if isAuthenticated() && isValidNotification(request.resource.data);
+      }
+
+      match /custom_workouts/{workoutId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidCustomWorkout(request.resource.data);
+      }
+
+      match /workout_progress/{progressId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && progressId == 'guided'
+          && isValidGuidedWorkoutProgress(request.resource.data);
       }
     }
 
@@ -290,14 +349,18 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated()
           && hasRequiredFields(['senderId', 'senderName', 'text', 'createdAt'])
-          && hasOnlyAllowedFields(['senderId', 'senderName', 'text', 'timeText', 'createdAt'])
+          && hasOnlyAllowedFields(['senderId', 'senderName', 'text', 'timeText', 'venueInvite', 'createdAt'])
+          && request.resource.data.senderId is string
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.senderName is string
           && request.resource.data.senderName.size() > 0
           && request.resource.data.senderName.size() <= 100
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+          && request.resource.data.text.size() <= 2000
+          && (!('timeText' in request.resource.data) || (request.resource.data.timeText is string && request.resource.data.timeText.size() <= 32))
+          && (!('venueInvite' in request.resource.data) || isValidVenueInvite(request.resource.data.venueInvite))
+          && request.resource.data.createdAt is timestamp;
         allow update, delete: if false;
       }
     }
@@ -338,7 +401,7 @@ service cloud.firestore {
         && data.order >= 1
         && data.order <= 1000
         && data.isActive is bool
-        && (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt == request.time));
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
     function isValidGuidedWorkoutDay(data, dayId) {
@@ -371,19 +434,61 @@ service cloud.firestore {
         && data.exercises.size() >= 1
         && data.exercises.size() <= 30
         && data.isActive is bool
-        && (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt == request.time));
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidCustomWorkout(data) {
+      return hasRequiredFields([
+          'name', 'calories', 'durationLabel', 'difficultyLabel', 'exercises'
+        ])
+        && hasOnlyAllowedFields([
+          'name', 'calories', 'durationLabel', 'difficultyLabel', 'exercises', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 40
+        && data.calories is int
+        && data.calories >= 1
+        && data.calories <= 5000
+        && data.durationLabel is string
+        && data.durationLabel.size() > 0
+        && data.durationLabel.size() <= 30
+        && data.difficultyLabel is string
+        && data.difficultyLabel.size() > 0
+        && data.difficultyLabel.size() <= 30
+        && data.exercises is list
+        && data.exercises.size() >= 1
+        && data.exercises.size() <= 30
+        && (!('createdAt' in data) || data.createdAt is timestamp)
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidGuidedWorkoutProgress(data) {
+      return hasRequiredFields(['highestUnlockedDay', 'completedDays'])
+        && hasOnlyAllowedFields(['highestUnlockedDay', 'completedDays', 'updatedAt'])
+        && data.highestUnlockedDay is int
+        && data.highestUnlockedDay >= 1
+        && data.highestUnlockedDay <= 30
+        && data.completedDays is list
+        && data.completedDays.size() <= 30
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
     match /workout_exercises/{exerciseId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAdmin() && isValidWorkoutExercise(request.resource.data, exerciseId);
+      allow read: if true;
+      allow create, update: if (isAuthenticated() && isValidWorkoutExercise(request.resource.data, exerciseId)) || isAdmin();
       allow delete: if isAdmin();
     }
 
     match /guided_workout_days/{dayId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAdmin() && isValidGuidedWorkoutDay(request.resource.data, dayId);
+      allow read: if true;
+      allow create, update: if (isAuthenticated() && isValidGuidedWorkoutDay(request.resource.data, dayId)) || isAdmin();
       allow delete: if isAdmin();
+    }
+
+    match /venues/{venueId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
   }
 }

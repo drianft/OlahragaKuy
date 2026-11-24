@@ -202,24 +202,86 @@ object WorkoutFirestoreStore {
     }
 }
 
+data class GuidedWorkoutProgress(
+    val highestUnlockedDay: Int = 1,
+    val completedDays: Set<Int> = emptySet(),
+)
+
+/**
+ * Penyimpanan progres Latihan Terarah per akun pengguna (`activeUserId`).
+ * Otomatis di-reset saat berganti akun atau logout dan disinkronkan ke Firestore
+ * pada dokumen `users/{uid}/workout_progress/guided`.
+ */
 object GuidedWorkoutProgressStore {
+    var activeUserId by mutableStateOf<String?>(null)
+        private set
+
     var highestUnlockedDay by mutableIntStateOf(1)
         private set
 
     var completedDays by mutableStateOf<Set<Int>>(emptySet())
         private set
 
-    fun completeDay(dayNumber: Int) {
-        val safeDay = dayNumber.coerceIn(1, GUIDED_WORKOUT_TOTAL_DAYS)
-        completedDays += safeDay
-        val nextUnlocked = (safeDay + 1).coerceAtMost(GUIDED_WORKOUT_TOTAL_DAYS)
-        if (nextUnlocked > highestUnlockedDay) {
-            highestUnlockedDay = nextUnlocked
+    var isLoading by mutableStateOf(false)
+        private set
+
+    var errorMessage by mutableStateOf<String?>(null)
+        private set
+
+    fun bindUser(userId: String?) {
+        val normalized = userId?.trim()?.takeIf { it.isNotEmpty() }
+        if (activeUserId != normalized) {
+            activeUserId = normalized
+            highestUnlockedDay = 1
+            completedDays = emptySet()
+            errorMessage = null
         }
+        isLoading = normalized != null
+    }
+
+    fun applyFromFirestore(userId: String, progress: GuidedWorkoutProgress) {
+        val normalized = userId.trim()
+        if (activeUserId != normalized) return
+        val sanitizedDays = progress.completedDays
+            .filter { it in 1..GUIDED_WORKOUT_TOTAL_DAYS }
+            .toSet()
+        val highestFromCompleted = sanitizedDays.maxOrNull()
+            ?.let { (it + 1).coerceAtMost(GUIDED_WORKOUT_TOTAL_DAYS) }
+            ?: 1
+        completedDays = sanitizedDays
+        highestUnlockedDay = maxOf(
+            progress.highestUnlockedDay.coerceIn(1, GUIDED_WORKOUT_TOTAL_DAYS),
+            highestFromCompleted,
+        )
+        isLoading = false
+        errorMessage = null
+    }
+
+    fun setError(userId: String, message: String) {
+        if (activeUserId != userId.trim()) return
+        isLoading = false
+        errorMessage = message
+    }
+
+    fun completeDay(dayNumber: Int): GuidedWorkoutProgress {
+        val safeDay = dayNumber.coerceIn(1, GUIDED_WORKOUT_TOTAL_DAYS)
+        val updatedCompleted = completedDays + safeDay
+        val nextUnlocked = (safeDay + 1).coerceAtMost(GUIDED_WORKOUT_TOTAL_DAYS)
+        val updatedHighest = maxOf(highestUnlockedDay, nextUnlocked)
+            .coerceIn(1, GUIDED_WORKOUT_TOTAL_DAYS)
+        completedDays = updatedCompleted
+        highestUnlockedDay = updatedHighest
+        return GuidedWorkoutProgress(
+            highestUnlockedDay = updatedHighest,
+            completedDays = updatedCompleted,
+        )
     }
 
     fun reset() {
+        activeUserId = null
         highestUnlockedDay = 1
         completedDays = emptySet()
+        isLoading = false
+        errorMessage = null
     }
 }

@@ -112,4 +112,38 @@ class GuidedWorkoutModelsTest {
         assertEquals("01:05", formatDurationClock(65))
         assertEquals("00:00", formatDurationClock(-5))
     }
+
+    @Test
+    fun switchingAccountResetsProgressAndIgnoresStaleCallbacks() {
+        GuidedWorkoutProgressStore.bindUser("user_A")
+        GuidedWorkoutProgressStore.completeDay(1)
+        GuidedWorkoutProgressStore.completeDay(2)
+
+        assertEquals("user_A", GuidedWorkoutProgressStore.activeUserId)
+        assertEquals(3, GuidedWorkoutProgressStore.highestUnlockedDay)
+        assertEquals(setOf(1, 2), GuidedWorkoutProgressStore.completedDays)
+
+        // Ganti ke akun lain: progres akun sebelumnya tidak boleh terbawa
+        GuidedWorkoutProgressStore.bindUser("user_B")
+
+        assertEquals("user_B", GuidedWorkoutProgressStore.activeUserId)
+        assertEquals(1, GuidedWorkoutProgressStore.highestUnlockedDay)
+        assertTrue(GuidedWorkoutProgressStore.completedDays.isEmpty())
+
+        // Callback terlambat dari user_A harus diabaikan
+        GuidedWorkoutProgressStore.applyFromFirestore(
+            userId = "user_A",
+            progress = GuidedWorkoutProgress(highestUnlockedDay = 5, completedDays = setOf(1, 2, 3, 4)),
+        )
+        assertEquals(1, GuidedWorkoutProgressStore.highestUnlockedDay)
+        assertTrue(GuidedWorkoutProgressStore.completedDays.isEmpty())
+
+        // Callback untuk user_B diterapkan dengan benar
+        GuidedWorkoutProgressStore.applyFromFirestore(
+            userId = "user_B",
+            progress = GuidedWorkoutProgress(highestUnlockedDay = 2, completedDays = setOf(1)),
+        )
+        assertEquals(2, GuidedWorkoutProgressStore.highestUnlockedDay)
+        assertEquals(setOf(1), GuidedWorkoutProgressStore.completedDays)
+    }
 }

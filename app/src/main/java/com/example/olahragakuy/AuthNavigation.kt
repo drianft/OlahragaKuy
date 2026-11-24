@@ -36,6 +36,10 @@ import com.example.olahragakuy.pages.posts.ensureDirectChatRoom
 import com.example.olahragakuy.pages.posts.resolveDisplayName
 import com.example.olahragakuy.pages.profile.user.LoggedInProfileScreen
 import com.example.olahragakuy.pages.profile.user.OtherUserProfileScreen
+import com.example.olahragakuy.pages.training.CreateCustomWorkoutScreen
+import com.example.olahragakuy.pages.training.CustomWorkoutDetailScreen
+import com.example.olahragakuy.pages.training.CustomWorkoutListScreen
+import com.example.olahragakuy.pages.training.CustomWorkoutStore
 import com.example.olahragakuy.pages.training.ExerciseDetailScreen
 import com.example.olahragakuy.pages.training.GuidedWorkoutDaysScreen
 import com.example.olahragakuy.pages.training.GuidedWorkoutDetailScreen
@@ -44,7 +48,12 @@ import com.example.olahragakuy.pages.training.HomeWorkoutScreen
 import com.example.olahragakuy.pages.training.TrainingHomeScreen
 import com.example.olahragakuy.pages.training.WorkoutFirestoreStore
 import com.example.olahragakuy.pages.training.WorkoutSessionScreen
+import com.example.olahragakuy.pages.training.completeGuidedWorkoutDayForUser
+import com.example.olahragakuy.pages.training.deleteCustomWorkoutFromFirestore
+import com.example.olahragakuy.pages.training.observeUserCustomWorkouts
+import com.example.olahragakuy.pages.training.observeUserGuidedProgress
 import com.example.olahragakuy.pages.training.observeWorkoutFirestoreData
+import com.example.olahragakuy.pages.training.saveCustomWorkoutToFirestore
 import com.example.olahragakuy.pages.venuefinder.VenueChatBridge
 import com.example.olahragakuy.pages.venuefinder.VenueFinderScreen
 import com.example.olahragakuy.ui.components.HomeNavTab
@@ -76,14 +85,29 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
     }
 
     DisposableEffect(currentUserUid) {
-        val registration = if (currentUserUid != null) {
+        val uid = currentUserUid
+        val catalogRegistration = if (uid != null) {
             observeWorkoutFirestoreData(autoSeedIfEmpty = true)
         } else {
             WorkoutFirestoreStore.clear()
             null
         }
+        val guidedProgressRegistration = if (uid != null) {
+            observeUserGuidedProgress(userId = uid)
+        } else {
+            GuidedWorkoutProgressStore.reset()
+            null
+        }
+        val customWorkoutRegistration = if (uid != null) {
+            observeUserCustomWorkouts(userId = uid)
+        } else {
+            CustomWorkoutStore.clear()
+            null
+        }
         onDispose {
-            registration?.remove()
+            catalogRegistration?.remove()
+            guidedProgressRegistration?.remove()
+            customWorkoutRegistration?.remove()
         }
     }
 
@@ -352,10 +376,113 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                         launchSingleTop = true
                     }
                 },
+                onCustomWorkoutClick = {
+                    navController.navigate("custom_workout_list") {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+        composable("custom_workout_list") {
+            CustomWorkoutListScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navigateToTab(HomeNavTab.LATIHAN)
+                    }
+                },
+                onTabSelected = navigateToTab,
+                onWorkoutClick = { workoutId ->
+                    navController.navigate("custom_workout_detail/${Uri.encode(workoutId)}") {
+                        launchSingleTop = true
+                    }
+                },
+                onAddWorkoutClick = {
+                    navController.navigate("custom_workout_create") {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+        composable("custom_workout_create") {
+            CreateCustomWorkoutScreen(
+                onBack = { navController.popBackStack() },
+                onSaveWorkout = { name, selectedExercises, onResult ->
+                    val uid = currentUserUid ?: auth.currentUser?.uid.orEmpty()
+                    saveCustomWorkoutToFirestore(
+                        userId = uid,
+                        name = name,
+                        selectedExercises = selectedExercises,
+                        onResult = onResult,
+                    )
+                },
+                onCreatedContinue = {
+                    if (!navController.popBackStack("custom_workout_list", inclusive = false)) {
+                        navController.popBackStack()
+                    }
+                },
+            )
+        }
+        composable(
+            route = "custom_workout_detail/{workoutId}",
+            arguments = listOf(
+                navArgument("workoutId") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
+            val workoutId = entry.arguments?.getString("workoutId").orEmpty()
+            CustomWorkoutDetailScreen(
+                workoutId = workoutId,
+                onBack = { navController.popBackStack() },
+                onExerciseClick = { exerciseKey ->
+                    navController.navigate("exercise_detail/${Uri.encode(exerciseKey)}") {
+                        launchSingleTop = true
+                    }
+                },
+                onStartWorkoutClick = {
+                    navController.navigate("custom_workout_session/${Uri.encode(workoutId)}") {
+                        launchSingleTop = true
+                    }
+                },
+                onDeleteWorkoutClick = { targetId ->
+                    val uid = currentUserUid ?: auth.currentUser?.uid.orEmpty()
+                    deleteCustomWorkoutFromFirestore(
+                        userId = uid,
+                        workoutId = targetId,
+                        onResult = { success, _ ->
+                            if (success) {
+                                navController.popBackStack()
+                            }
+                        },
+                    )
+                },
+            )
+        }
+        composable(
+            route = "custom_workout_session/{workoutId}",
+            arguments = listOf(
+                navArgument("workoutId") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
+            val workoutId = entry.arguments?.getString("workoutId").orEmpty()
+            val customPlan = CustomWorkoutStore.workoutById(workoutId)
+            WorkoutSessionScreen(
+                exercises = customPlan?.exercises.orEmpty(),
+                onQuitConfirmed = { navController.popBackStack() },
+                onWorkoutCompleted = {},
+                onCompletedContinue = {
+                    if (!navController.popBackStack("custom_workout_list", inclusive = false)) {
+                        navController.popBackStack()
+                    }
+                },
             )
         }
         composable("guided_workout_days") {
+            val activeUid = currentUserUid ?: auth.currentUser?.uid
+            val syncedForCurrentUser = activeUid != null && GuidedWorkoutProgressStore.activeUserId == activeUid
             GuidedWorkoutDaysScreen(
+                currentUserId = activeUid,
+                isLoadingProgress = !syncedForCurrentUser || GuidedWorkoutProgressStore.isLoading,
+                highestUnlockedDay = if (syncedForCurrentUser) GuidedWorkoutProgressStore.highestUnlockedDay else 1,
+                completedDays = if (syncedForCurrentUser) GuidedWorkoutProgressStore.completedDays else emptySet(),
                 onBack = {
                     if (!navController.popBackStack()) {
                         navigateToTab(HomeNavTab.LATIHAN)
@@ -402,7 +529,13 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
             WorkoutSessionScreen(
                 exercises = dayPlan?.exercises.orEmpty(),
                 onQuitConfirmed = { navController.popBackStack() },
-                onWorkoutCompleted = { GuidedWorkoutProgressStore.completeDay(dayNumber) },
+                onWorkoutCompleted = {
+                    val uid = currentUserUid ?: auth.currentUser?.uid.orEmpty()
+                    completeGuidedWorkoutDayForUser(
+                        userId = uid,
+                        dayNumber = dayNumber,
+                    )
+                },
                 onCompletedContinue = {
                     if (!navController.popBackStack("guided_workout_days", inclusive = false)) {
                         navController.popBackStack()
@@ -432,6 +565,8 @@ fun AuthNavigation(modifier: Modifier = Modifier, onExit: () -> Unit = {}) {
                 onHomeClick = { navigateToTab(HomeNavTab.KOMUNITAS) },
                 onTabSelected = navigateToTab,
                 onLogout = {
+                    GuidedWorkoutProgressStore.reset()
+                    CustomWorkoutStore.clear()
                     FirebaseAuth.getInstance().signOut()
                     navController.navigate("opening") {
                         popUpTo(0) { inclusive = true }

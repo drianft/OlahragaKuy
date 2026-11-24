@@ -120,4 +120,35 @@ class GuidedWorkoutRepositoryTest {
         assertNotNull(WorkoutFirestoreStore.dayPlanOrNull(1))
         assertNull(WorkoutFirestoreStore.dayPlanOrNull(2))
     }
+
+    @Test
+    fun guidedProgressRoundTripsThroughUserCollectionFields() {
+        val progress = GuidedWorkoutProgress(
+            highestUnlockedDay = 3,
+            completedDays = setOf(1, 2),
+        )
+        val userDocFields = progress.toUserFieldsMap(includeServerTimestamp = false)
+        assertEquals(3, userDocFields[FIELD_GUIDED_HIGHEST_DAY])
+        assertEquals(listOf(1, 2), userDocFields[FIELD_GUIDED_COMPLETED_DAYS])
+
+        val parsed = parseGuidedWorkoutProgressFromMap(userDocFields)
+        assertEquals(3, parsed.highestUnlockedDay)
+        assertEquals(setOf(1, 2), parsed.completedDays)
+
+        val sanitized = parseGuidedWorkoutProgressFromMap(
+            mapOf(
+                FIELD_GUIDED_HIGHEST_DAY to 1,
+                FIELD_GUIDED_COMPLETED_DAYS to listOf(0, 1, 4, 99),
+            ),
+        )
+        assertEquals(setOf(1, 4), sanitized.completedDays)
+        assertEquals(5, sanitized.highestUnlockedDay)
+
+        // Dokumen users/{uid} baru tanpa field progres -> default Hari 1 terbuka & belum ada centang
+        val freshAccount = parseGuidedWorkoutProgressFromMap(
+            mapOf("username" to "akun_baru", "displayName" to "Akun Baru"),
+        )
+        assertEquals(1, freshAccount.highestUnlockedDay)
+        assertEquals(emptySet<Int>(), freshAccount.completedDays)
+    }
 }
