@@ -3,6 +3,8 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,12 +20,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -31,6 +42,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -41,6 +55,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.ui.theme.*
@@ -295,33 +311,248 @@ fun KuySuccessPopupOverlay(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KuyPullToRefreshBox(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
     indicatorModifier: Modifier = Modifier,
+    showRefreshCompleted: Boolean = false,
     contentAlignment: Alignment = Alignment.TopStart,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val state = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
+    val haptic = LocalHapticFeedback.current
+    val pullFraction = state.distanceFraction.coerceIn(0f, 1.35f)
+    val isPulling = !isRefreshing && (pullFraction > 0.02f)
+    val isArmed = !isRefreshing && (state.distanceFraction >= 1f)
+
+    var armedHapticTriggered by remember { mutableStateOf(false) }
+    LaunchedEffect(isArmed, isRefreshing) {
+        if (isRefreshing) {
+            armedHapticTriggered = false
+        } else if (isArmed && !armedHapticTriggered) {
+            armedHapticTriggered = true
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        } else if (!isArmed && state.distanceFraction < 0.85f) {
+            armedHapticTriggered = false
+        }
+    }
+
+    val targetBlur = when {
+        isRefreshing -> 8.dp
+        isPulling -> (pullFraction.coerceAtMost(1f) * 4f).dp
+        else -> 0.dp
+    }
+    val targetScrimAlpha = when {
+        isRefreshing -> 0.34f
+        isPulling -> pullFraction.coerceAtMost(1f) * 0.16f
+        else -> 0f
+    }
+    val targetScale = when {
+        isRefreshing -> 0.986f
+        isPulling -> 1f - (pullFraction.coerceAtMost(1f) * 0.01f)
+        else -> 1f
+    }
+
+    val blurSpec = if (isPulling) {
+        tween<Dp>(durationMillis = 80)
+    } else {
+        tween(durationMillis = 240, easing = FastOutSlowInEasing)
+    }
+    val floatSpec = if (isPulling) {
+        tween<Float>(durationMillis = 80)
+    } else {
+        tween(durationMillis = 240, easing = FastOutSlowInEasing)
+    }
+
+    val animatedBlur by animateDpAsState(
+        targetValue = targetBlur,
+        animationSpec = blurSpec,
+        label = "kuy_refresh_blur",
+    )
+    val animatedScrimAlpha by animateFloatAsState(
+        targetValue = targetScrimAlpha,
+        animationSpec = floatSpec,
+        label = "kuy_refresh_scrim",
+    )
+    val animatedScale by animateFloatAsState(
+        targetValue = targetScale,
+        animationSpec = floatSpec,
+        label = "kuy_refresh_scale",
+    )
+
+    val pillVisible = isRefreshing || showRefreshCompleted || pullFraction > 0.08f
+    val pillProgress by animateFloatAsState(
+        targetValue = when {
+            isRefreshing || showRefreshCompleted -> 1f
+            pillVisible -> pullFraction.coerceIn(0f, 1f)
+            else -> 0f
+        },
+        animationSpec = if (isPulling) tween(60) else tween(220, easing = FastOutSlowInEasing),
+        label = "kuy_refresh_pill_progress",
+    )
+
     androidx.compose.material3.pulltorefresh.PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = onRefresh,
         state = state,
-        modifier = modifier,
+        modifier = modifier.background(KuyNavy),
         contentAlignment = contentAlignment,
         indicator = {
-            androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator(
-                state = state,
-                isRefreshing = isRefreshing,
-                containerColor = Color(0xFF16324F),
-                color = KuyOrange,
-                modifier = Modifier.align(Alignment.TopCenter).then(indicatorModifier),
-            )
+            if (pillProgress > 0.01f) {
+                val successColor = Color(0xFF4ADE80)
+                val borderColor = when {
+                    isRefreshing || isArmed -> KuyOrange.copy(alpha = 0.85f)
+                    showRefreshCompleted -> successColor.copy(alpha = 0.75f)
+                    else -> KuyBlue.copy(alpha = 0.45f)
+                }
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color(0xFF16324F).copy(alpha = 0.96f),
+                    border = BorderStroke(1.dp, borderColor),
+                    shadowElevation = 10.dp,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .then(indicatorModifier)
+                        .padding(top = 12.dp)
+                        .graphicsLayer {
+                            val clamped = pillProgress.coerceIn(0f, 1f)
+                            alpha = (clamped * 1.35f).coerceIn(0f, 1f)
+                            translationY = (1f - clamped) * -28.dp.toPx()
+                            val pillScale = 0.88f + (0.12f * clamped)
+                            scaleX = pillScale
+                            scaleY = pillScale
+                        },
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    ) {
+                        when {
+                            isRefreshing -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = KuyOrange,
+                                    strokeWidth = 2.2.dp,
+                                )
+                            }
+                            showRefreshCompleted -> {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = successColor,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = null,
+                                    tint = if (isArmed) KuyOrange else KuyText.copy(alpha = 0.85f),
+                                    modifier = Modifier
+                                        .size(17.dp)
+                                        .graphicsLayer {
+                                            rotationZ = pullFraction * 220f
+                                        },
+                                )
+                            }
+                        }
+                        Text(
+                            text = when {
+                                isRefreshing -> "Memperbarui…"
+                                showRefreshCompleted -> "Berhasil diperbarui"
+                                isArmed -> "Lepas untuk refresh"
+                                else -> "Tarik untuk refresh"
+                            },
+                            fontFamily = Poppins,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = when {
+                                isArmed -> KuyOrange
+                                showRefreshCompleted -> successColor
+                                else -> KuyText
+                            },
+                        )
+                    }
+                }
+            }
         },
-        content = content,
+        content = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = animatedScale
+                        scaleY = animatedScale
+                    }
+                    .let { base ->
+                        if (animatedBlur > 0.05.dp) {
+                            base.blur(
+                                radius = animatedBlur,
+                                edgeTreatment = BlurredEdgeTreatment.Rectangle,
+                            )
+                        } else {
+                            base
+                        }
+                    },
+                contentAlignment = contentAlignment,
+                content = content,
+            )
+            if (animatedScrimAlpha > 0.005f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(KuyNavy.copy(alpha = animatedScrimAlpha)),
+                )
+            }
+        },
     )
+}
+
+@Preview(name = "Sedang Refresh (Blur + Pill)", showBackground = true, widthDp = 393, heightDp = 360)
+@Composable
+private fun KuyPullToRefreshRefreshingPreview() {
+    OlahragaKuyTheme {
+        KuyPullToRefreshBox(
+            isRefreshing = true,
+            onRefresh = {},
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(HomeNavy)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Spacer(Modifier.height(36.dp))
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = HomeBlue,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text(
+                            text = "Target Hidrasi Harian",
+                            fontFamily = Poppins,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = HomeText,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "1.250 / 2.000 ml terpenuhi hari ini",
+                            fontFamily = Poppins,
+                            fontSize = 13.sp,
+                            color = HomeText.copy(alpha = 0.8f),
+                        )
+                    }
+                }
+                KuyPrimaryButton(text = "+ Tambah Alarm", onClick = {}, enabled = true)
+            }
+        }
+    }
 }
 

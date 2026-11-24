@@ -9,18 +9,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.CancellationException
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private val MIN_REFRESH_FEEDBACK_DURATION = 600.milliseconds
+private val COMPLETED_BADGE_DURATION = 700.milliseconds
 
 val LocalKuyRefresh = staticCompositionLocalOf<RefreshRegistry?> { null }
 
@@ -38,7 +44,7 @@ fun RegisterKuyRefresh(onRefresh: suspend () -> Unit) {
 /**
  * Install once around navigation. Child scrollables trigger pull-to-refresh at their top.
  * Non-scrolling forms also participate without changing their layout constraints.
- * Maps use an explicit button so dragging the map keeps its normal meaning.
+ * Maps skip the vertical scroll fallback so dragging the map keeps its normal meaning.
  */
 @Composable
 fun KuyRefreshHost(
@@ -49,23 +55,36 @@ fun KuyRefreshHost(
     content: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
     val snackbar = remember { SnackbarHostState() }
     var refreshing by remember { mutableStateOf(false) }
-    var job by remember { mutableStateOf<Job?>(null) }
+    var showCompletedBadge by remember { mutableStateOf(false) }
+    var refreshJob by remember { mutableStateOf<Job?>(null) }
+    var badgeJob by remember { mutableStateOf<Job?>(null) }
     DisposableEffect(pageKey) {
         onDispose {
-            job?.cancel()
-            job = null
+            refreshJob?.cancel()
+            refreshJob = null
+            badgeJob?.cancel()
+            badgeJob = null
             refreshing = false
+            showCompletedBadge = false
             snackbar.currentSnackbarData?.dismiss()
         }
     }
     val refresh: () -> Unit = {
         if (!refreshing) {
+            badgeJob?.cancel()
+            showCompletedBadge = false
             refreshing = true
-            job = scope.launch {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            refreshJob = scope.launch {
                 val result = try {
-                    registry.refresh()
+                    coroutineScope {
+                        val refreshDeferred = async { registry.refresh() }
+                        delay(MIN_REFRESH_FEEDBACK_DURATION)
+                        refreshDeferred.await()
+                    }
                 } finally {
                     refreshing = false
                 }
@@ -73,6 +92,12 @@ fun KuyRefreshHost(
                     snackbar.showSnackbar("Sebagian data gagal diperbarui. Silakan coba lagi.")
                 } else if (result.total == 0) {
                     snackbar.showSnackbar("Tidak ada data untuk dimuat ulang. Isian tetap tersimpan.")
+                } else {
+                    badgeJob = scope.launch {
+                        showCompletedBadge = true
+                        delay(COMPLETED_BADGE_DURATION)
+                        showCompletedBadge = false
+                    }
                 }
             }
         }
@@ -86,6 +111,7 @@ fun KuyRefreshHost(
             KuyPullToRefreshBox(
                 isRefreshing = refreshing,
                 onRefresh = refresh,
+                showRefreshCompleted = showCompletedBadge,
                 indicatorModifier = Modifier.statusBarsPadding(),
                 modifier = Modifier.fillMaxSize().semantics {
                     customActions = listOf(CustomAccessibilityAction("Refresh halaman") {
@@ -95,13 +121,6 @@ fun KuyRefreshHost(
                 },
             ) {
                 Box(Modifier.fillMaxSize().then(scrollFallback)) { content() }
-            }
-            if (mapPage) {
-                FilledTonalButton(
-                    onClick = refresh,
-                    enabled = !refreshing,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 96.dp),
-                ) { Text(if (refreshing) "Memuat…" else "Refresh") }
             }
             SnackbarHost(
                 hostState = snackbar,
