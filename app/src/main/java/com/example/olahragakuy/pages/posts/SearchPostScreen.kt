@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.posts
 
+import com.example.olahragakuy.ui.components.LocalKuyRefresh
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,6 +91,7 @@ fun SearchPostScreen(
     initialShowResults: Boolean = false,
     onUserProfileClick: (userId: String, displayName: String) -> Unit = { _, _ -> },
 ) {
+    val refreshRegistry = LocalKuyRefresh.current
     val isPreview = LocalInspectionMode.current
     val focusManager = LocalFocusManager.current
     var query by rememberSaveable { mutableStateOf(initialQuery) }
@@ -109,7 +113,7 @@ fun SearchPostScreen(
                     .collection("posts")
                     .orderBy("createdAt", Query.Direction.DESCENDING)
                     .limit(50)
-                    .addSnapshotListener { snapshot, error ->
+                    .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                         loading = false
                         if (error != null) {
                             loadError = error.localizedMessage ?: "Gagal memuat postingan."

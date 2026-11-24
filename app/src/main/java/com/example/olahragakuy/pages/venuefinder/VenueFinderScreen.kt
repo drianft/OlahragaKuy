@@ -69,6 +69,7 @@ fun VenueFinderScreen(
     onTabSelected: (HomeNavTab) -> Unit = {},
     onNavigateToChat: (VenueChatTarget) -> Unit = {},
 ) {
+    val refreshRegistry = com.example.olahragakuy.ui.components.LocalKuyRefresh.current
     val isPreview = LocalInspectionMode.current
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -185,7 +186,7 @@ fun VenueFinderScreen(
 
         // Observasi venue aktif secara real-time (isActive == true, fallback lokal USU Medan).
         DisposableEffect(Unit) {
-            val registration = observeActiveVenues { activeVenues, _ ->
+            val registration = observeActiveVenues(refreshRegistry = refreshRegistry) { activeVenues, _ ->
                 val activeOnly = filterActiveVenues(activeVenues)
                 val currentSelected = uiState.selectedVenue
                 val refreshedSelected = currentSelected?.let { selected ->

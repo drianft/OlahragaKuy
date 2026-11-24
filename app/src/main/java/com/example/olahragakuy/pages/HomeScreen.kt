@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages
 
+import com.example.olahragakuy.ui.components.LocalKuyRefresh
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,7 +10,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalDensity
 import com.google.firebase.firestore.Source
@@ -15,7 +17,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -64,7 +65,6 @@ import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.HomePostCard
 import com.example.olahragakuy.ui.components.KuyBottomNavBar
 import com.example.olahragakuy.ui.components.KuyHomeTopBar
-import com.example.olahragakuy.ui.components.KuyPullToRefreshBox
 import com.example.olahragakuy.ui.components.StreakBanner
 import com.example.olahragakuy.ui.theme.HomeBlue
 import com.example.olahragakuy.ui.theme.HomeNavy
@@ -75,7 +75,6 @@ import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,27 +90,19 @@ fun HomeScreen(
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
     var posts by remember { mutableStateOf<List<PostUiModel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var isRefreshing by remember { mutableStateOf(false) }
     var feedError by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
-    var refreshRequest by remember { mutableIntStateOf(0) }
     var imageRetry by remember { mutableIntStateOf(0) }
-    var refreshing by remember { mutableStateOf(false) }
-    val revisions = remember { FeedRevision() }
+    val refreshRegistry = LocalKuyRefresh.current
     val isPreview = LocalInspectionMode.current
 
-    androidx.compose.runtime.LaunchedEffect(isRefreshing) {
-        if (isRefreshing) {
-            delay(500)
-            isRefreshing = false
-        }
-    }
+    com.example.olahragakuy.ui.components.RegisterKuyRefresh { imageRetry++ }
 
     DisposableEffect(isPreview, retry) {
         var listener: ListenerRegistration? = null
         if (isPreview) {
             loading = false
-            isRefreshing = false
+            // Refresh progress is managed by KuyRefreshHost.
         } else {
             syncCurrentUserToFirestore(onError = { notice = it })
             if (posts.isEmpty()) {
@@ -123,9 +114,9 @@ fun HomeScreen(
                     .collection("posts")
                     .orderBy("createdAt", Query.Direction.DESCENDING)
                     .limit(20)
-                    .addSnapshotListener { snapshot, error ->
+                    .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                         loading = false
-                        isRefreshing = false
+                        // Refresh progress is managed by KuyRefreshHost.
                         if (error != null) {
                             feedError = error.localizedMessage ?: "Gagal mengambil postingan."
                         } else {
@@ -135,7 +126,7 @@ fun HomeScreen(
                     }
             } catch (error: Exception) {
                 loading = false
-                isRefreshing = false
+                // Refresh progress is managed by KuyRefreshHost.
                 feedError = error.localizedMessage ?: "Gagal menghubungkan Firebase."
             }
         }
@@ -162,14 +153,12 @@ fun HomeScreen(
             )
         },
     ) { insets ->
-        KuyPullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = {
-                isRefreshing = true
-                retry++
-            },
-            modifier = Modifier.fillMaxSize().padding(insets),
-        ) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(insets)) {
+            val widthPx = with(LocalDensity.current) {
+                (maxWidth - 40.dp).roundToPx().coerceAtLeast(1)
+            }
+            val images = rememberPreparedFeedImages(posts, widthPx, imageRetry)
+            val visiblePosts = posts.filter { it.imageUrl == null || it.id in images.painters }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -182,6 +171,15 @@ fun HomeScreen(
                         userDisplayName = userDisplayName,
                         onClick = onCreatePost,
                     )
+                }
+                if (images.preparing) item {
+                    Text("Menyiapkan foto postingan…", Modifier.padding(20.dp), color = HomeText)
+                }
+                if (images.failed) item {
+                    Column(Modifier.padding(20.dp)) {
+                        Text("Beberapa foto belum berhasil dimuat", color = HomeText)
+                        TextButton(onClick = { imageRetry++ }) { Text("Coba lagi") }
+                    }
                 }
                 when {
                     loading -> item {
@@ -200,10 +198,11 @@ fun HomeScreen(
                     posts.isEmpty() -> item {
                         Text("Belum ada postingan.", Modifier.padding(20.dp), color = HomeText)
                     }
-                    else -> items(posts, key = { "post:${it.id}" }) { rawPost ->
+                    else -> items(visiblePosts, key = { "post:${it.id}" }) { rawPost ->
                         val post = rawPost.withLocalState()
                         HomePostCard(
                             post = post,
+                            preparedImage = images.painters[post.id],
                             isLiked = currentUser?.uid != null && currentUser.uid in post.likedByIds,
                             onLikeClick = {
                                 togglePostLike(

@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.venuefinder
 
+import com.example.olahragakuy.ui.components.RefreshRegistry
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import android.util.Log
 import com.example.olahragakuy.pages.posts.CHAT_COLLECTION
 import com.example.olahragakuy.pages.posts.ChatRoomUiModel
@@ -37,12 +40,13 @@ private val RecipientAvatarPalette = listOf(
  * - Tidak pernah menulis atau membuat koleksi baru di Firestore.
  */
 fun observeActiveVenues(
+    refreshRegistry: RefreshRegistry? = null,
     onResult: (venues: List<VenueUiModel>, isFallback: Boolean) -> Unit,
 ): ListenerRegistration? {
     return try {
         FirebaseFirestore.getInstance()
             .collection(VENUES_COLLECTION)
-            .addSnapshotListener { snapshot, error ->
+            .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                 if (error != null) {
                     Log.e(
                         TAG_VENUE_REPOSITORY,
@@ -50,11 +54,11 @@ fun observeActiveVenues(
                         error,
                     )
                     onResult(filterActiveVenues(DefaultUsuVenues), true)
-                    return@addSnapshotListener
+                    return@addRefreshableSnapshotListener
                 }
                 if (snapshot == null) {
                     onResult(filterActiveVenues(DefaultUsuVenues), true)
-                    return@addSnapshotListener
+                    return@addRefreshableSnapshotListener
                 }
                 val parsedActive = filterActiveVenues(
                     snapshot.documents.mapNotNull { doc ->

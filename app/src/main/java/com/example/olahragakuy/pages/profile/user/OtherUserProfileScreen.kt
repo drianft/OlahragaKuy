@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.profile.user
 
+import com.example.olahragakuy.ui.components.LocalKuyRefresh
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -29,6 +32,7 @@ fun OtherUserProfileScreen(
     onTabSelected: (HomeNavTab) -> Unit = {},
     onHomeClick: () -> Unit = {},
 ) {
+    val refreshRegistry = LocalKuyRefresh.current
     val auth = remember { FirebaseAuth.getInstance() }
     val currentUser = remember { auth.currentUser }
     val cleanTargetUid = targetUserId.trim()
@@ -63,7 +67,7 @@ fun OtherUserProfileScreen(
         if (cleanTargetUid.isNotEmpty()) {
             registrations += db.collection("users")
                 .document(cleanTargetUid)
-                .addSnapshotListener { document, error ->
+                .addRefreshableSnapshotListener(refreshRegistry) { document, error ->
                     if (error != null) {
                         loadError = shouldShowProfileLoadError(error.code.name)
                     } else {
@@ -79,7 +83,7 @@ fun OtherUserProfileScreen(
             registrations += db.collection("users")
                 .document(cleanTargetUid)
                 .collection("followers")
-                .addSnapshotListener { snapshot, _ ->
+                .addRefreshableSnapshotListener(refreshRegistry) { snapshot, _ ->
                     if (snapshot != null) {
                         followersSubCount = snapshot.size()
                     }
@@ -87,7 +91,7 @@ fun OtherUserProfileScreen(
 
             registrations += db.collection("posts")
                 .whereEqualTo("authorId", cleanTargetUid)
-                .addSnapshotListener { snapshot, _ ->
+                .addRefreshableSnapshotListener(refreshRegistry) { snapshot, _ ->
                     if (snapshot != null) {
                         val byId = snapshot.documents.toSortedUserPosts()
                         if (byId.isNotEmpty()) {
@@ -107,7 +111,7 @@ fun OtherUserProfileScreen(
 
             registrations += db.collection("posts")
                 .whereArrayContains("taggedFriendIds", cleanTargetUid)
-                .addSnapshotListener { snapshot, _ ->
+                .addRefreshableSnapshotListener(refreshRegistry) { snapshot, _ ->
                     if (snapshot != null) {
                         taggedPosts = snapshot.documents.toSortedUserPosts()
                     }
@@ -118,7 +122,7 @@ fun OtherUserProfileScreen(
                     .document(currentUser.uid)
                     .collection("following")
                     .document(cleanTargetUid)
-                    .addSnapshotListener { doc, _ ->
+                    .addRefreshableSnapshotListener(refreshRegistry) { doc, _ ->
                         val exists = doc?.exists() == true
                         if (!followBusy) {
                             initialFollowingLoaded = exists
@@ -130,7 +134,7 @@ fun OtherUserProfileScreen(
             registrations += db.collection("users")
                 .whereEqualTo("username", fallbackName)
                 .limit(1)
-                .addSnapshotListener { userSnap, _ ->
+                .addRefreshableSnapshotListener(refreshRegistry) { userSnap, _ ->
                     val doc = userSnap?.documents?.firstOrNull()
                     if (doc != null) {
                         profile = parseUserProfileSnapshot(
@@ -142,7 +146,7 @@ fun OtherUserProfileScreen(
 
             registrations += db.collection("posts")
                 .whereEqualTo("authorName", fallbackName)
-                .addSnapshotListener { snapshot, error ->
+                .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                     if (error != null) {
                         loadError = shouldShowProfileLoadError(error.code.name)
                     } else if (snapshot != null) {

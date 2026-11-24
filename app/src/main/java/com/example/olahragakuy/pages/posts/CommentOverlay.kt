@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.posts
 
+import com.example.olahragakuy.ui.components.LocalKuyRefresh
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +88,7 @@ fun CommentOverlay(
 
     BackHandler(enabled = visible) { onDismiss() }
 
+    val refreshRegistry = LocalKuyRefresh.current
     val context = LocalContext.current
     val inputFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -108,7 +112,7 @@ fun CommentOverlay(
             .document(postId)
             .collection("comments")
             .orderBy("createdAt", Query.Direction.ASCENDING)
-            .addSnapshotListener { snapshot, error ->
+            .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                 loading = false
                 loadError = if (error != null) "Komentar gagal dimuat. Coba lagi." else null
                 if (snapshot != null && error == null) {
@@ -458,6 +462,7 @@ private fun CommentItem(
     var liking by remember(postId, comment.id, userId) { mutableStateOf(false) }
     var likeError by remember(postId, comment.id) { mutableStateOf<String?>(null) }
     var retryLikes by remember(postId, comment.id) { mutableIntStateOf(0) }
+    val refreshRegistry = LocalKuyRefresh.current
     val likesRef = remember(postId, comment.id) {
         FirebaseFirestore.getInstance().collection("posts").document(postId)
             .collection("comments").document(comment.id).collection("likes")
@@ -465,7 +470,7 @@ private fun CommentItem(
     DisposableEffect(likesRef, userId, retryLikes) {
         likesReady = false
         likeError = null
-        val listener = likesRef.addSnapshotListener { snapshot, error ->
+        val listener = likesRef.addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
             if (error != null) {
                 likesReady = false
                 likeError = "Suka gagal dimuat. Ketuk untuk mencoba lagi."
