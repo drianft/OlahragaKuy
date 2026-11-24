@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.olahragakuy.R
 import com.example.olahragakuy.ui.theme.*
 @Composable
 fun KuyPrimaryButton(
@@ -65,6 +66,40 @@ fun KuyPrimaryButton(
         contentPadding = PaddingValues(10.dp),
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+fun KuyGoogleAuthButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    text: String = "Masuk dengan Google",
+    enabled: Boolean = true,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth().height(60.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = if (enabled) Color.White else Color.White.copy(alpha = 0.6f),
+        shadowElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.login_google),
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+            )
+            Text(
+                text = text,
+                color = if (enabled) Color.Black else Color.Black.copy(alpha = 0.5f),
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+            )
+        }
     }
 }
 @Composable
