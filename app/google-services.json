@@ -12,7 +12,20 @@
           "package_name": "com.example.olahragakuy"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "404054610431-uhndtql4dv25rl5oe0pdjk8eenerou8h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.olahragakuy",
+            "certificate_hash": "6eeba71ba3b544be525d556d5a46b87cc5940ea4"
+          }
+        },
+        {
+          "client_id": "404054610431-jf3h0gpne9esr46s0ah5ef8p26hs1abp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAtfcLMUAnbBowWIGdrKWQMHw7sjBEGESs"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "404054610431-jf3h0gpne9esr46s0ah5ef8p26hs1abp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

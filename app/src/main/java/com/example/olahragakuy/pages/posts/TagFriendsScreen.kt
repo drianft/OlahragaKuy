@@ -128,6 +128,15 @@ fun TagFriendsScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
 
+    com.example.olahragakuy.ui.components.RegisterKuyRefresh {
+        if (!inPreview) {
+            val user = currentUserOrNull()
+            friends = refreshFirebaseFriends(user?.uid, user.resolveDisplayName(""))
+            error = null
+            loading = false
+        }
+    }
+
     if (!inPreview) {
         LaunchedEffect(reloadKey) {
             val currentUser = currentUserOrNull()

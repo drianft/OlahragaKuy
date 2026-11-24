@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.training
 
+import com.example.olahragakuy.ui.components.RefreshRegistry
+import com.example.olahragakuy.ui.components.addRefreshableSnapshotListener
+
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -225,6 +228,7 @@ object CustomWorkoutStore {
 fun observeUserCustomWorkouts(
     userId: String,
     firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
+    refreshRegistry: RefreshRegistry? = null,
 ): ListenerRegistration {
     if (userId.isBlank()) {
         CustomWorkoutStore.clear()
@@ -236,12 +240,12 @@ fun observeUserCustomWorkouts(
         firestore.collection("users")
             .document(userId)
             .collection(CUSTOM_WORKOUTS_SUBCOLLECTION)
-            .addSnapshotListener { snapshot, error ->
+            .addRefreshableSnapshotListener(refreshRegistry) { snapshot, error ->
                 if (error != null) {
                     CustomWorkoutStore.setError(
                         error.localizedMessage ?: "Gagal memuat kostumisasi latihan dari Firestore.",
                     )
-                    return@addSnapshotListener
+                    return@addRefreshableSnapshotListener
                 }
                 val parsed = snapshot?.documents.orEmpty().mapNotNull { doc ->
                     parseCustomWorkoutFromMap(doc.id, doc.data.orEmpty())

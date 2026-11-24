@@ -15,10 +15,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
+import com.example.olahragakuy.ui.components.RefreshRegistry
+import com.example.olahragakuy.ui.components.KuyRefreshHost
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -27,6 +32,7 @@ import com.example.olahragakuy.pages.HomeScreen
 import com.example.olahragakuy.pages.LoginScreen
 import com.example.olahragakuy.pages.OpeningScreen
 import com.example.olahragakuy.pages.RegisterScreen
+import com.example.olahragakuy.pages.clearGoogleCredentialState
 import com.example.olahragakuy.pages.posts.ChatScreen
 import com.example.olahragakuy.pages.posts.CreatePostScreen
 import com.example.olahragakuy.pages.posts.NotificationScreen
@@ -64,6 +70,7 @@ import com.example.olahragakuy.ui.theme.KuyNavy
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
 
 // Figma: Login -> Home uses Dissolve, Ease Out, 300ms.
 private const val HOME_DISSOLVE_MS = 300
@@ -78,6 +85,10 @@ fun AuthNavigation(
     onConsumeOpenStepTracker: () -> Unit = {},
 ) {
     val navController = rememberNavController()
+    val refreshRegistry = remember { RefreshRegistry() }
+    val currentEntry by navController.currentBackStackEntryAsState()
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var currentUserRole by rememberSaveable { mutableStateOf("member") }
     var prefilledEmail by rememberSaveable { mutableStateOf("") }
     val auth = remember { FirebaseAuth.getInstance() }
@@ -97,19 +108,19 @@ fun AuthNavigation(
     DisposableEffect(currentUserUid) {
         val uid = currentUserUid
         val catalogRegistration = if (uid != null) {
-            observeWorkoutFirestoreData(autoSeedIfEmpty = true)
+            observeWorkoutFirestoreData(autoSeedIfEmpty = true, refreshRegistry = refreshRegistry)
         } else {
             WorkoutFirestoreStore.clear()
             null
         }
         val guidedProgressRegistration = if (uid != null) {
-            observeUserGuidedProgress(userId = uid)
+            observeUserGuidedProgress(userId = uid, refreshRegistry = refreshRegistry)
         } else {
             GuidedWorkoutProgressStore.reset()
             null
         }
         val customWorkoutRegistration = if (uid != null) {
-            observeUserCustomWorkouts(userId = uid)
+            observeUserCustomWorkouts(userId = uid, refreshRegistry = refreshRegistry)
         } else {
             CustomWorkoutStore.clear()
             null
@@ -268,10 +279,18 @@ fun AuthNavigation(
 
     val mainTabRoutes = remember { setOf("home", "lokasi", "latihan", "profile") }
 
+    KuyRefreshHost(
+        registry = refreshRegistry,
+        pageKey = currentEntry?.id,
+        mapPage = currentEntry?.destination?.route?.let {
+            it == "lokasi" || it.startsWith("venue_finder")
+        } == true,
+        modifier = modifier,
+    ) {
     NavHost(
         navController = navController,
         startDestination = startDestination,
-        modifier = modifier.fillMaxSize().background(KuyNavy),
+        modifier = Modifier.fillMaxSize().background(KuyNavy),
         // Keep both screens opaque so the window never shows through a crossfade.
         enterTransition = {
             if (initialState.destination.route in mainTabRoutes && targetState.destination.route in mainTabRoutes) {
@@ -349,6 +368,12 @@ fun AuthNavigation(
                 onRegistered = navigateToLogin,
                 onLogin = navigateToLogin,
                 onRegisteredWithEmail = { prefilledEmail = it },
+                onGoogleSignedIn = { role ->
+                    currentUserRole = role
+                    navController.navigate("home") {
+                        popUpTo("opening") { inclusive = true }
+                    }
+                },
             )
         }
         composable(
@@ -646,6 +671,7 @@ fun AuthNavigation(
                     GuidedWorkoutProgressStore.reset()
                     CustomWorkoutStore.clear()
                     FirebaseAuth.getInstance().signOut()
+                    coroutineScope.launch { clearGoogleCredentialState(context) }
                     navController.navigate("opening") {
                         popUpTo(0) { inclusive = true }
                         launchSingleTop = true
@@ -733,6 +759,7 @@ fun AuthNavigation(
                 onOpenVenueFinder = navigateToVenueFinder,
             )
         }
+    }
     }
 }
 
