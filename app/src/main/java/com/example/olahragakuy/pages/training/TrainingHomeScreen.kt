@@ -53,17 +53,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.R
+import com.example.olahragakuy.pages.training.streak.StreakDayUiModel
+import com.example.olahragakuy.pages.training.streak.defaultEmptyWeekStreakDays
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.KuyBottomNavBar
 import com.example.olahragakuy.ui.theme.HomeNavy
 import com.example.olahragakuy.ui.theme.HomeOrange
 import com.example.olahragakuy.ui.theme.HomeText
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
-
-data class StreakDayUiModel(
-    val label: String,
-    val completed: Boolean = true,
-)
 
 enum class TrainingRoutineType {
     HOME_WORKOUT,
@@ -82,16 +79,6 @@ private val StreakCardBg = Color(0xFF16324F)
 private val StreakPillBg = Color(0xFF0C2138)
 private val StreakCheckOrange = Color(0xFFE0620E)
 private val TopBarDivider = Color(0xFF162B42)
-
-private val DefaultStreakDays = listOf(
-    StreakDayUiModel("Sen", true),
-    StreakDayUiModel("Sel", true),
-    StreakDayUiModel("Rab", true),
-    StreakDayUiModel("Kam", true),
-    StreakDayUiModel("Jum", true),
-    StreakDayUiModel("Sab", true),
-    StreakDayUiModel("Min", true),
-)
 
 private val DefaultTrainingRoutines = listOf(
     TrainingRoutineUiModel(
@@ -117,8 +104,9 @@ private val DefaultTrainingRoutines = listOf(
 @Composable
 fun TrainingHomeScreen(
     modifier: Modifier = Modifier,
-    streakDaysCount: Int = 30,
-    streakDays: List<StreakDayUiModel> = DefaultStreakDays,
+    streakDaysCount: Int = 0,
+    streakDays: List<StreakDayUiModel> = defaultEmptyWeekStreakDays(),
+    streakSubtitle: String = "Pertahankan Streak Olahraga anda!",
     routines: List<TrainingRoutineUiModel> = DefaultTrainingRoutines,
     onTabSelected: (HomeNavTab) -> Unit = {},
     onRoutineClick: (TrainingRoutineType) -> Unit = {},
@@ -153,6 +141,7 @@ fun TrainingHomeScreen(
             TrainingStreakCard(
                 streakDaysCount = streakDaysCount,
                 streakDays = streakDays,
+                streakSubtitle = streakSubtitle,
             )
 
             Text(
@@ -242,6 +231,7 @@ private fun TrainingTopBar(modifier: Modifier = Modifier) {
 private fun TrainingStreakCard(
     streakDaysCount: Int,
     streakDays: List<StreakDayUiModel>,
+    streakSubtitle: String,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -280,7 +270,7 @@ private fun TrainingStreakCard(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "Pertahankan Streak Olahraga anda!",
+                    text = streakSubtitle,
                     color = HomeText.copy(alpha = 0.8f),
                     fontSize = 11.sp,
                     textAlign = TextAlign.Center,
@@ -487,6 +477,17 @@ private fun DrawScope.drawHomeWorkoutIllustration() {
 @Composable
 private fun TrainingHomeScreenPreview() {
     OlahragaKuyTheme {
-        TrainingHomeScreen()
+        TrainingHomeScreen(
+            streakDaysCount = 5,
+            streakDays = listOf(
+                StreakDayUiModel("Sen", true),
+                StreakDayUiModel("Sel", true),
+                StreakDayUiModel("Rab", true),
+                StreakDayUiModel("Kam", true),
+                StreakDayUiModel("Jum", true),
+                StreakDayUiModel("Sab", false),
+                StreakDayUiModel("Min", false),
+            ),
+        )
     }
 }
