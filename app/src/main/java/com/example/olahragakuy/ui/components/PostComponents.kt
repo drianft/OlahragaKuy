@@ -136,6 +136,7 @@ fun KuyUserAvatar(
 fun StreakBanner(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    streakDaysCount: Int = 0,
 ) {
     Row(
         modifier
@@ -158,7 +159,12 @@ fun StreakBanner(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("🔥", fontSize = 30.sp)
-                Text("30", color = HomeText, fontSize = 36.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = streakDaysCount.coerceAtLeast(0).toString(),
+                    color = HomeText,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             }
             OutlinedButton(
                 onClick = onClick,

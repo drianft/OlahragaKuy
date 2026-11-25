@@ -61,6 +61,10 @@ import com.example.olahragakuy.pages.training.observeUserCustomWorkouts
 import com.example.olahragakuy.pages.training.observeUserGuidedProgress
 import com.example.olahragakuy.pages.training.observeWorkoutFirestoreData
 import com.example.olahragakuy.pages.training.saveCustomWorkoutToFirestore
+import com.example.olahragakuy.pages.training.streak.TrainingStreakStore
+import com.example.olahragakuy.pages.training.streak.buildStreakSubtitle
+import com.example.olahragakuy.pages.training.streak.observeUserStreak
+import com.example.olahragakuy.pages.training.streak.recordWorkoutCompletedForStreak
 import com.example.olahragakuy.pages.venuefinder.VenueChatBridge
 import com.example.olahragakuy.pages.venuefinder.VenueChatTarget
 import com.example.olahragakuy.pages.venuefinder.VenueFinderScreen
@@ -122,10 +126,17 @@ fun AuthNavigation(
             CustomWorkoutStore.clear()
             null
         }
+        val streakRegistration = if (uid != null) {
+            observeUserStreak(userId = uid, refreshRegistry = refreshRegistry)
+        } else {
+            TrainingStreakStore.reset()
+            null
+        }
         onDispose {
             catalogRegistration?.remove()
             guidedProgressRegistration?.remove()
             customWorkoutRegistration?.remove()
+            streakRegistration?.remove()
         }
     }
 
@@ -362,7 +373,11 @@ fun AuthNavigation(
                 fadeOut(animationSpec = tween(HOME_DISSOLVE_MS, easing = FastOutSlowInEasing))
             },
         ) {
+            val activeUid = currentUserUid ?: auth.currentUser?.uid
+            val streakSummary = TrainingStreakStore.summaryFor(activeUid)
             HomeScreen(
+                streakDaysCount = streakSummary.currentStreakDays,
+                onStreakClick = { navigateToTab(HomeNavTab.LATIHAN) },
                 onCreatePost = {
                     navController.navigate("create_post") { launchSingleTop = true }
                 },
@@ -406,7 +421,12 @@ fun AuthNavigation(
             )
         }
         composable("latihan") {
+            val activeUid = currentUserUid ?: auth.currentUser?.uid
+            val streakSummary = TrainingStreakStore.summaryFor(activeUid)
             TrainingHomeScreen(
+                streakDaysCount = streakSummary.currentStreakDays,
+                streakDays = streakSummary.weekDays,
+                streakSubtitle = buildStreakSubtitle(streakSummary),
                 onTabSelected = navigateToTab,
                 onHomeWorkoutClick = {
                     navController.navigate("workout_rumahan") {
@@ -524,7 +544,10 @@ fun AuthNavigation(
             WorkoutSessionScreen(
                 exercises = customPlan?.exercises.orEmpty(),
                 onQuitConfirmed = { navController.popBackStack() },
-                onWorkoutCompleted = {},
+                onWorkoutCompleted = {
+                    val uid = currentUserUid ?: auth.currentUser?.uid.orEmpty()
+                    recordWorkoutCompletedForStreak(userId = uid)
+                },
                 onCompletedContinue = {
                     if (!navController.popBackStack("custom_workout_list", inclusive = false)) {
                         navController.popBackStack()
@@ -592,6 +615,7 @@ fun AuthNavigation(
                         userId = uid,
                         dayNumber = dayNumber,
                     )
+                    recordWorkoutCompletedForStreak(userId = uid)
                 },
                 onCompletedContinue = {
                     if (!navController.popBackStack("guided_workout_days", inclusive = false)) {
@@ -633,6 +657,7 @@ fun AuthNavigation(
                 onLogout = {
                     GuidedWorkoutProgressStore.reset()
                     CustomWorkoutStore.clear()
+                    TrainingStreakStore.reset()
                     FirebaseAuth.getInstance().signOut()
                     coroutineScope.launch { clearGoogleCredentialState(context) }
                     navController.navigate("opening") {

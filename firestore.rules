@@ -25,6 +25,14 @@ rules_version = '2';
 //   - type: string (required, in ['LIKE', 'COMMENT', 'TAG'])
 //   - createdAt: timestamp (required, == request.time)
 //
+// Subcollection: users/{userId}/streak_days/{dateKey}
+// Fields:
+//   - dateKey: string (required, == dateKey, format YYYY-MM-DD)
+//   - workoutCompleted: bool (required)
+//   - stepDistanceMeters: number (required, 0..500000)
+//   - qualified: bool (required, == workoutCompleted || stepDistanceMeters >= 1000)
+//   - updatedAt: timestamp (optional)
+//
 // Collection: posts/{postId}
 // Fields:
 //   - authorId: string (required, == request.auth.uid, immutable)
@@ -230,6 +238,12 @@ service cloud.firestore {
         allow create, update: if isOwner(userId)
           && progressId == 'guided'
           && isValidGuidedWorkoutProgress(request.resource.data);
+      }
+
+      match /streak_days/{dateKey} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && isValidStreakDay(request.resource.data, dateKey);
       }
     }
 
@@ -471,6 +485,21 @@ service cloud.firestore {
         && data.highestUnlockedDay <= 30
         && data.completedDays is list
         && data.completedDays.size() <= 30
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidStreakDay(data, dateKey) {
+      return dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && hasRequiredFields(['dateKey', 'workoutCompleted', 'stepDistanceMeters', 'qualified'])
+        && hasOnlyAllowedFields(['dateKey', 'workoutCompleted', 'stepDistanceMeters', 'qualified', 'updatedAt'])
+        && data.dateKey is string
+        && data.dateKey == dateKey
+        && data.workoutCompleted is bool
+        && data.stepDistanceMeters is number
+        && data.stepDistanceMeters >= 0
+        && data.stepDistanceMeters <= 500000
+        && data.qualified is bool
+        && data.qualified == (data.workoutCompleted || data.stepDistanceMeters >= 1000)
         && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 

@@ -79,6 +79,8 @@ import com.google.firebase.firestore.Query
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    streakDaysCount: Int = 0,
+    onStreakClick: () -> Unit = {},
     onCreatePost: () -> Unit = {},
     onSearchClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
@@ -164,7 +166,10 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 item {
-                    StreakBanner(onClick = { notice = "Fitur streak belum tersedia." })
+                    StreakBanner(
+                        streakDaysCount = streakDaysCount,
+                        onClick = onStreakClick,
+                    )
                 }
                 item {
                     CreatePostPromptBar(
