@@ -50,9 +50,13 @@ rules_version = '2';
 //   - likesCount, commentsCount, sharesCount: int (optional, >= 0)
 //   - createdAt: timestamp (required, == request.time)
 //   - resolvedBy: string (admin update only, == request.auth.uid)
+//   - resolvedByName: string (admin update only, 1..100 chars)
 //   - resolvedAt: timestamp (admin update only, == request.time)
 //   - warningTitle: string (admin update only, 0..120 chars)
 //   - warningDescription: string (admin update only, 0..1000 chars)
+//   - warningNotificationId: string (admin update only, 0..128 chars)
+//   - warningRecipientUid: string (admin update only, 0..128 chars)
+//   - deletedPostBackup: map (admin update only, snapshot of deleted post for restore)
 //
 // Collection: posts/{postId}
 // Fields:
@@ -221,15 +225,32 @@ service cloud.firestore {
       let next = request.resource.data;
       return resource.data.status == 'PENDING'
         && next.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'resolvedBy', 'resolvedAt', 'warningTitle', 'warningDescription'
+          'status', 'resolvedBy', 'resolvedByName', 'resolvedAt',
+          'warningTitle', 'warningDescription',
+          'warningNotificationId', 'warningRecipientUid', 'deletedPostBackup'
         ])
         && next.status in ['IGNORED', 'RESOLVED_DELETED', 'RESOLVED_WARNED']
         && next.resolvedBy is string
         && next.resolvedBy == request.auth.uid
+        && (!('resolvedByName' in next) || (next.resolvedByName is string && next.resolvedByName.size() > 0 && next.resolvedByName.size() <= 100))
         && next.resolvedAt is timestamp
         && next.resolvedAt == request.time
         && (!('warningTitle' in next) || (next.warningTitle is string && next.warningTitle.size() <= 120))
-        && (!('warningDescription' in next) || (next.warningDescription is string && next.warningDescription.size() <= 1000));
+        && (!('warningDescription' in next) || (next.warningDescription is string && next.warningDescription.size() <= 1000))
+        && (!('warningNotificationId' in next) || (next.warningNotificationId is string && next.warningNotificationId.size() <= 128))
+        && (!('warningRecipientUid' in next) || (next.warningRecipientUid is string && next.warningRecipientUid.size() <= 128))
+        && (!('deletedPostBackup' in next) || next.deletedPostBackup is map);
+    }
+
+    function isValidReportRestoreUpdate() {
+      let next = request.resource.data;
+      return resource.data.status in ['IGNORED', 'RESOLVED_DELETED', 'RESOLVED_WARNED']
+        && next.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'resolvedBy', 'resolvedByName', 'resolvedAt',
+          'warningTitle', 'warningDescription',
+          'warningNotificationId', 'warningRecipientUid', 'deletedPostBackup'
+        ])
+        && next.status == 'PENDING';
     }
 
     function isValidPostCreate(data) {
@@ -251,6 +272,35 @@ service cloud.firestore {
         && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1000))
         && (!('taggedFriendIds' in data) || (data.taggedFriendIds is list && data.taggedFriendIds.size() <= 50))
         && (!('taggedFriends' in data) || (data.taggedFriends is list && data.taggedFriends.size() <= 50))
+        && data.createdAt is timestamp
+        && data.createdAt == request.time;
+    }
+
+    function isValidAdminPostRestore(data) {
+      return hasRequiredFields(['authorId', 'authorName', 'caption', 'createdAt'])
+        && hasOnlyAllowedFields([
+          'authorId', 'authorName', 'caption', 'category', 'searchKeywords',
+          'imageUrl', 'taggedFriendIds', 'taggedFriends', 'createdAt',
+          'likes', 'likedByIds', 'likedByNames', 'comment', 'Share'
+        ])
+        && data.authorId is string
+        && data.authorId.size() > 0
+        && data.authorId.size() <= 128
+        && data.authorName is string
+        && data.authorName.size() > 0
+        && data.authorName.size() <= 100
+        && data.caption is string
+        && data.caption.size() <= 2000
+        && (!('category' in data) || (data.category is string && data.category.size() <= 200))
+        && (!('searchKeywords' in data) || (data.searchKeywords is list && data.searchKeywords.size() <= 100))
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1000))
+        && (!('taggedFriendIds' in data) || (data.taggedFriendIds is list && data.taggedFriendIds.size() <= 50))
+        && (!('taggedFriends' in data) || (data.taggedFriends is list && data.taggedFriends.size() <= 50))
+        && (!('likes' in data) || (data.likes is int && data.likes >= 0))
+        && (!('likedByIds' in data) || (data.likedByIds is list && data.likedByIds.size() <= 500))
+        && (!('likedByNames' in data) || (data.likedByNames is list && data.likedByNames.size() <= 500))
+        && (!('comment' in data) || (data.comment is int && data.comment >= 0))
+        && (!('Share' in data) || (data.Share is int && data.Share >= 0))
         && data.createdAt is timestamp
         && data.createdAt == request.time;
     }
@@ -317,7 +367,9 @@ service cloud.firestore {
       }
 
       match /notifications/{notificationId} {
-        allow read, delete: if isOwner(userId);
+        allow read: if isOwner(userId);
+        allow delete: if isOwner(userId)
+          || (isAdmin() && resource.data.type == 'WARNING');
         allow create: if (isAuthenticated() && isValidNotification(request.resource.data))
           || (isAdmin() && isValidAdminWarningNotification(request.resource.data));
         allow update: if isAuthenticated()
@@ -378,7 +430,8 @@ service cloud.firestore {
       }
 
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidPostCreate(request.resource.data);
+      allow create: if (isAuthenticated() && isValidPostCreate(request.resource.data))
+        || (isAdmin() && isValidAdminPostRestore(request.resource.data));
       allow update: if validCommentIncrement() || validPostLikeUpdate() || validPostCaptionUpdate();
       allow delete: if isAdmin() || (isAuthenticated() && resource.data.authorId == request.auth.uid);
 
@@ -595,7 +648,7 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow read: if isAdmin();
       allow create: if isAuthenticated() && isValidReportCreate(request.resource.data);
-      allow update: if isAdmin() && isValidReportResolutionUpdate();
+      allow update: if isAdmin() && (isValidReportResolutionUpdate() || isValidReportRestoreUpdate());
       allow delete: if isAdmin();
     }
 

@@ -308,7 +308,7 @@ fun AdminReportDetailScreen(
 }
 
 @Composable
-private fun ReportedPostPreviewCard(report: AdminReportItem) {
+internal fun ReportedPostPreviewCard(report: AdminReportItem) {
     Surface(
         shape = RoundedCornerShape(22.dp),
         color = HomeBlue,
@@ -435,7 +435,7 @@ private fun ReportPostStatItem(
 }
 
 @Composable
-private fun ReportDetailInfoRow(
+internal fun ReportDetailInfoRow(
     label: String,
     value: String,
 ) {

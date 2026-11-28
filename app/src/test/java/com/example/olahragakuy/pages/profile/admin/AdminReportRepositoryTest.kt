@@ -4,6 +4,7 @@ import com.example.olahragakuy.pages.posts.NotificationType
 import com.example.olahragakuy.pages.posts.parseNotificationUiModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -99,14 +100,20 @@ class AdminReportRepositoryTest {
         val resolve = buildResolveReportPayload(
             status = REPORT_STATUS_RESOLVED_WARNED,
             resolvedBy = "uid-admin",
+            resolvedByName = "AdminUtama",
             warningTitle = "Peringatan Keras",
             warningDescription = "Harap patuhi aturan komunitas.",
+            warningNotificationId = "notif-123",
+            warningRecipientUid = "uid-user",
             resolvedAt = "SERVER_TIME",
         )
         assertEquals(REPORT_STATUS_RESOLVED_WARNED, resolve["status"])
         assertEquals("uid-admin", resolve["resolvedBy"])
+        assertEquals("AdminUtama", resolve["resolvedByName"])
         assertEquals("Peringatan Keras", resolve["warningTitle"])
         assertEquals("Harap patuhi aturan komunitas.", resolve["warningDescription"])
+        assertEquals("notif-123", resolve["warningNotificationId"])
+        assertEquals("uid-user", resolve["warningRecipientUid"])
 
         val warningNotif = buildAdminWarningNotificationPayload(
             adminUid = "uid-admin",
@@ -122,6 +129,108 @@ class AdminReportRepositoryTest {
         assertEquals(NotificationType.WARNING.code, warningNotif["type"])
         assertEquals("Notifikasi Warning", warningNotif["title"])
         assertEquals("Konten Anda melanggar aturan.", warningNotif["description"])
+    }
+
+    @Test
+    fun parseAdminActionHistoryItemMapsResolvedReportsAcrossAdminsAndSkipsPending() {
+        assertNull(
+            parseAdminActionHistoryItem(
+                id = "pending-1",
+                data = mapOf("status" to REPORT_STATUS_PENDING),
+            ),
+        )
+
+        val deletedHistory = parseAdminActionHistoryItem(
+            id = "hist-del",
+            data = mapOf(
+                "type" to "POST",
+                "status" to REPORT_STATUS_RESOLVED_DELETED,
+                "reportedUserId" to "uid-bibi",
+                "reportedUsername" to "BibiOlahraga",
+                "reporterUsername" to "PecintaJogging",
+                "reportCategory" to "Kekerasan, kebencian atau eksploitasi",
+                "reportDescription" to "Deskripsi laporan",
+                "contentPreview" to "Always on Proces",
+                "postDocumentId" to "post-42",
+                "createdAtMillis" to 1_794_268_800_000L,
+                "resolvedAtMillis" to 1_795_478_400_000L,
+                "resolvedBy" to "uid-admin-2",
+                "resolvedByName" to "AdminLain",
+                "deletedPostBackup" to mapOf(
+                    "authorId" to "uid-bibi",
+                    "authorName" to "BibiOlahraga",
+                    "caption" to "Always on Proces",
+                    "likes" to 57L,
+                ),
+            ),
+        )
+        assertNotNull(deletedHistory)
+        assertEquals("Removed Post", deletedHistory!!.actionLabel)
+        assertEquals("AdminLain", deletedHistory.resolvedByName)
+        assertEquals("uid-admin-2", deletedHistory.resolvedByUid)
+        assertEquals("Always on Proces", deletedHistory.deletedPostBackup?.get("caption"))
+
+        val warnedHistory = parseAdminActionHistoryItem(
+            id = "hist-warn",
+            data = mapOf(
+                "type" to "POST",
+                "status" to REPORT_STATUS_RESOLVED_WARNED,
+                "reportedUsername" to "BibiOlahraga",
+                "reporterUsername" to "PecintaJogging",
+                "reportCategory" to "Aktivitas ilegal",
+                "resolvedByName" to "BibiAdmin",
+                "warningTitle" to "Vulgaritas",
+                "warningNotificationId" to "notif-77",
+                "warningRecipientUid" to "uid-bibi",
+            ),
+        )
+        assertEquals("Warning sent", warnedHistory?.actionLabel)
+        assertEquals("Vulgaritas", warnedHistory?.warningTitle)
+        assertEquals("notif-77", warnedHistory?.warningNotificationId)
+        assertEquals("Removed Comment", formatAdminActionLabel(REPORT_STATUS_RESOLVED_DELETED, AdminReportType.COMMENT))
+        assertEquals("Removed Location", formatAdminActionLabel(REPORT_STATUS_RESOLVED_DELETED, AdminReportType.LOCATION))
+        assertEquals("Ignored Report", formatAdminActionLabel(REPORT_STATUS_IGNORED, AdminReportType.POST))
+    }
+
+    @Test
+    fun buildRestorePostPayloadUsesBackupAndFallsBackToReportFields() {
+        val withBackup = SampleAdminHistoryItems.first().copy(
+            report = SampleAdminHistoryItems.first().report.copy(
+                reportedUserId = "uid-bibi",
+                postDocumentId = "post-42",
+            ),
+            deletedPostBackup = mapOf(
+                "authorId" to "uid-bibi",
+                "authorName" to "BibiOlahraga",
+                "caption" to "Caption Asli",
+                "category" to "Kardio",
+                "likes" to 57L,
+            ),
+        )
+        val restoredFromBackup = buildRestorePostPayload(withBackup, restoredAt = "SERVER_TIME")
+        assertNotNull(restoredFromBackup)
+        assertEquals("uid-bibi", restoredFromBackup!!["authorId"])
+        assertEquals("Caption Asli", restoredFromBackup["caption"])
+        assertEquals("Kardio", restoredFromBackup["category"])
+        assertEquals(57L, restoredFromBackup["likes"])
+        assertEquals("SERVER_TIME", restoredFromBackup["createdAt"])
+
+        val fallbackOnly = SampleAdminHistoryItems.first().copy(
+            report = SampleAdminHistoryItems.first().report.copy(
+                reportedUserId = "uid-bibi",
+                postDocumentId = "post-42",
+            ),
+            deletedPostBackup = null,
+        )
+        val restoredFallback = buildRestorePostPayload(fallbackOnly, restoredAt = "SERVER_TIME")
+        assertNotNull(restoredFallback)
+        assertEquals("Always on Proces", restoredFallback!!["caption"])
+        assertEquals(57L, restoredFallback["likes"])
+
+        val restoreReportPayload = buildRestoreReportPayload()
+        assertEquals(REPORT_STATUS_PENDING, restoreReportPayload["status"])
+        assertTrue(restoreReportPayload.containsKey("resolvedBy"))
+        assertTrue(restoreReportPayload.containsKey("deletedPostBackup"))
     }
 
     @Test
