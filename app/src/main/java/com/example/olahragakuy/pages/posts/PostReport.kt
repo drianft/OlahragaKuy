@@ -1,6 +1,7 @@
 package com.example.olahragakuy.pages.posts
 
 import androidx.compose.runtime.mutableStateMapOf
+import com.example.olahragakuy.pages.profile.admin.recordReportSubmittedNotification
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -139,14 +140,23 @@ fun submitPostReport(
         detail = detail,
     )
 
+    val db = FirebaseFirestore.getInstance()
     val reportDocId = postReportDocumentId(post.id, safeUser.uid)
-    val reportRef = FirebaseFirestore.getInstance()
+    val reportRef = db
         .collection("reports")
         .document(reportDocId)
 
     reportRef.set(payload)
         .addOnSuccessListener {
             LocalReportedPostIds[post.id] = reason
+            recordReportSubmittedNotification(
+                db = db,
+                reporterUid = safeUser.uid,
+                reportDocId = reportDocId,
+                reportedUsername = post.authorName,
+                postId = post.id,
+                reportCategory = reason.label,
+            )
             onSuccess("Laporan berhasil dikirim. Terima kasih telah membantu menjaga komunitas OlahragaKuy tetap positif.")
         }
         .addOnFailureListener { error ->

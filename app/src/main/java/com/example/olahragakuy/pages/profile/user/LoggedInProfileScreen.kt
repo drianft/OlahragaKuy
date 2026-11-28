@@ -148,73 +148,100 @@ fun LoggedInProfileScreen(
                 }
             }
         } else {
-            ProfileScreen(
-                initialUsername = username,
-                initialDisplayName = displayName,
-                initialBio = bio,
-                followers = maxOf(followers, followersSubCount),
-                following = maxOf(following, followingSubCount),
-                feedPosts = userPosts,
-                gridPosts = userPosts,
-                taggedPosts = taggedPosts,
-                onBack = onBack,
-                onHomeClick = onHomeClick,
-                onTabSelected = onTabSelected,
-                onLogout = onLogout,
-                onProfileSaved = { updatedUsername, updatedBio ->
-                    username = updatedUsername
-                    displayName = updatedUsername
-                    bio = updatedBio
-                    saveUserProfileToFirestore(
-                        user = currentUser,
-                        username = updatedUsername,
-                        bio = updatedBio,
-                        onError = { saveError = it },
+            val handleProfileSaved: (String, String) -> Unit = { updatedUsername, updatedBio ->
+                username = updatedUsername
+                displayName = updatedUsername
+                bio = updatedBio
+                saveUserProfileToFirestore(
+                    user = currentUser,
+                    username = updatedUsername,
+                    bio = updatedBio,
+                    onError = { saveError = it },
+                )
+            }
+            val handleDeletePost: (UserPost) -> Unit = { post ->
+                val previousPosts = userPosts
+                userPosts = userPosts.filterNot { it.documentId == post.documentId }
+                deleteUserPostFromFirestore(
+                    user = currentUser,
+                    documentId = post.documentId,
+                    onError = { err ->
+                        userPosts = previousPosts
+                        saveError = err
+                    },
+                )
+            }
+            val handleOpenEditPost: ((UserPost) -> Unit)? = onEditPostRequest?.let { openEdit ->
+                { post ->
+                    openEdit(
+                        EditPostTarget(
+                            postId = post.documentId,
+                            authorId = currentUser.uid,
+                            authorName = displayName.ifBlank { username },
+                            caption = post.caption,
+                            imageUrl = post.imageUrl,
+                            category = post.category,
+                            taggedFriends = post.taggedFriends,
+                            taggedNames = post.taggedNames,
+                        ),
                     )
-                },
-                onDeletePost = { post ->
-                    val previousPosts = userPosts
-                    userPosts = userPosts.filterNot { it.documentId == post.documentId }
-                    deleteUserPostFromFirestore(
-                        user = currentUser,
-                        documentId = post.documentId,
-                        onError = { err ->
-                            userPosts = previousPosts
-                            saveError = err
-                        },
-                    )
-                },
-                onOpenEditPost = onEditPostRequest?.let { openEdit ->
-                    { post ->
-                        openEdit(
-                            EditPostTarget(
-                                postId = post.documentId,
-                                authorId = currentUser.uid,
-                                authorName = displayName.ifBlank { username },
-                                caption = post.caption,
-                                imageUrl = post.imageUrl,
-                                category = post.category,
-                                taggedFriends = post.taggedFriends,
-                                taggedNames = post.taggedNames,
-                            ),
-                        )
-                    }
-                },
-                onEditPost = { post, newCaption ->
-                    val previousPosts = userPosts
-                    userPosts = userPosts.map {
-                        if (it.documentId == post.documentId) it.copy(caption = newCaption) else it
-                    }
-                    updateUserPostCaptionInFirestore(
-                        documentId = post.documentId,
-                        newCaption = newCaption,
-                        onError = { err ->
-                            userPosts = previousPosts
-                            saveError = err
-                        },
-                    )
-                },
-            )
+                }
+            }
+            val handleEditPost: (UserPost, String) -> Unit = { post, newCaption ->
+                val previousPosts = userPosts
+                userPosts = userPosts.map {
+                    if (it.documentId == post.documentId) it.copy(caption = newCaption) else it
+                }
+                updateUserPostCaptionInFirestore(
+                    documentId = post.documentId,
+                    newCaption = newCaption,
+                    onError = { err ->
+                        userPosts = previousPosts
+                        saveError = err
+                    },
+                )
+            }
+
+            if (userRole.equals("admin", ignoreCase = true)) {
+                AdminProfileScreen(
+                    initialUsername = username,
+                    initialDisplayName = displayName,
+                    initialBio = bio,
+                    followers = maxOf(followers, followersSubCount),
+                    following = maxOf(following, followingSubCount),
+                    feedPosts = userPosts,
+                    gridPosts = userPosts,
+                    taggedPosts = taggedPosts,
+                    onBack = onBack,
+                    onHomeClick = onHomeClick,
+                    onTabSelected = onTabSelected,
+                    onLogout = onLogout,
+                    onProfileSaved = handleProfileSaved,
+                    onDeletePost = handleDeletePost,
+                    onOpenEditPost = handleOpenEditPost,
+                    onEditPost = handleEditPost,
+                    onOpenDashboardReport = onOpenAdminDashboard,
+                )
+            } else {
+                ProfileScreen(
+                    initialUsername = username,
+                    initialDisplayName = displayName,
+                    initialBio = bio,
+                    followers = maxOf(followers, followersSubCount),
+                    following = maxOf(following, followingSubCount),
+                    feedPosts = userPosts,
+                    gridPosts = userPosts,
+                    taggedPosts = taggedPosts,
+                    onBack = onBack,
+                    onHomeClick = onHomeClick,
+                    onTabSelected = onTabSelected,
+                    onLogout = onLogout,
+                    onProfileSaved = handleProfileSaved,
+                    onDeletePost = handleDeletePost,
+                    onOpenEditPost = handleOpenEditPost,
+                    onEditPost = handleEditPost,
+                )
+            }
         }
 
         if (showError) {
