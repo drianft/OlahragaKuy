@@ -30,6 +30,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -39,6 +41,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -222,8 +228,11 @@ fun HomePostCard(
     isLiked: Boolean = false,
     onLikeClick: (() -> Unit)? = null,
     onAuthorClick: (() -> Unit)? = null,
+    onReportClick: (() -> Unit)? = null,
     preparedImage: androidx.compose.ui.graphics.painter.Painter? = null,
 ) {
+    var postMenuExpanded by remember { mutableStateOf(false) }
+
     Column(
         modifier
             .fillMaxWidth()
@@ -284,8 +293,33 @@ fun HomePostCard(
                     Text(post.time, color = HomeOrange, fontSize = 12.sp)
                 }
             }
-            TextButton(onClick = { onAction("Menu postingan belum tersedia.") }) {
-                Text("⋮", color = HomeText, fontSize = 28.sp)
+            Box {
+                TextButton(
+                    onClick = {
+                        if (onReportClick != null) {
+                            postMenuExpanded = true
+                        } else {
+                            onAction("Menu postingan belum tersedia.")
+                        }
+                    },
+                ) {
+                    Text("⋮", color = HomeText, fontSize = 28.sp)
+                }
+                if (onReportClick != null) {
+                    DropdownMenu(
+                        expanded = postMenuExpanded,
+                        onDismissRequest = { postMenuExpanded = false },
+                        containerColor = HomeNavy,
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Laporkan Postingan", color = HomeOrange) },
+                            onClick = {
+                                postMenuExpanded = false
+                                onReportClick()
+                            },
+                        )
+                    }
+                }
             }
         }
         Text(post.caption, color = HomeText, fontSize = 14.sp)

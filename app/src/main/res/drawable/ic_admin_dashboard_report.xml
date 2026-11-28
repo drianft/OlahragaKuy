@@ -1,0 +1,46 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Clipboard outline with notch at bottom-right for warning triangle -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M9,4H6C4.895,4 4,4.895 4,6V19C4,20.105 4.895,21 6,21H11.5M15,4H17C18.105,4 19,4.895 19,6V11.5"
+        android:strokeWidth="1.9"
+        android:strokeColor="#EDEDED"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Top clipboard clip -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M9,3.5C9,2.672 9.672,2 10.5,2H12.5C13.328,2 14,2.672 14,3.5V5.5C14,5.776 13.776,6 13.5,6H9.5C9.224,6 9,5.776 9,5.5V3.5Z"
+        android:strokeWidth="1.9"
+        android:strokeColor="#EDEDED"
+        android:strokeLineJoin="round" />
+    <!-- Report lines inside clipboard -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M8,10.5H15M8,14.5H12"
+        android:strokeWidth="1.9"
+        android:strokeColor="#EDEDED"
+        android:strokeLineCap="round" />
+    <!-- Warning triangle at bottom-right -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M17.5,13.2L22,20.8C22.2,21.15 21.95,21.6 21.55,21.6H13.45C13.05,21.6 12.8,21.15 13,20.8L17.5,13.2Z"
+        android:strokeWidth="1.7"
+        android:strokeColor="#EDEDED"
+        android:strokeLineJoin="round" />
+    <!-- Exclamation stem -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M17.5,16.1V18.3"
+        android:strokeWidth="1.7"
+        android:strokeColor="#EDEDED"
+        android:strokeLineCap="round" />
+    <!-- Exclamation dot -->
+    <path
+        android:fillColor="#EDEDED"
+        android:pathData="M17.5,19.7m-0.85,0a0.85,0.85 0,1 1,1.7 0a0.85,0.85 0,1 1,-1.7 0" />
+</vector>

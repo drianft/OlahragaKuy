@@ -165,6 +165,7 @@ fun NotificationScreen(
     modifier: Modifier = Modifier,
     initialSelectedPostId: String? = null,
     onUserProfileClick: (userId: String, displayName: String) -> Unit = { _, _ -> },
+    onTabSelected: (HomeNavTab) -> Unit = {},
 ) {
     val refreshRegistry = LocalKuyRefresh.current
     val isPreview = LocalInspectionMode.current
@@ -183,6 +184,7 @@ fun NotificationScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedWarning by remember { mutableStateOf<NotificationUiModel?>(null) }
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
@@ -376,12 +378,23 @@ fun NotificationScreen(
         selectedPostId = null
     }
 
-    val localSnapshot = LocalNotifications.toList()
+    val localSnapshot = LocalNotifications.filter { item ->
+        item.type != NotificationType.REPORT_SENT ||
+            currentUser?.uid == null ||
+            item.actorId == currentUser.uid
+    }
     val allNotifications = if (isPreview) {
         PreviewNotifications
     } else {
         (localSnapshot + remoteNotifications + derivedNotifications)
-            .distinctBy { "${it.type.code}:${it.postId}:${it.actorName.lowercase()}" }
+            .distinctBy { item ->
+                when (item.type) {
+                    NotificationType.WARNING,
+                    NotificationType.REPORT_SENT,
+                    -> "${item.type.code}:${item.id}"
+                    else -> "${item.type.code}:${item.postId}:${item.actorName.lowercase()}"
+                }
+            }
     }
 
     if (!isPreview) {
@@ -436,21 +449,7 @@ fun NotificationScreen(
         bottomBar = {
             KuyBottomNavBar(
                 selectedTab = HomeNavTab.KOMUNITAS,
-                onTabSelected = { tab ->
-                    when (tab) {
-                        HomeNavTab.KOMUNITAS -> {
-                            if (selectedPostId != null) selectedPostId = null else onBack()
-                        }
-                        HomeNavTab.PROFIL -> {
-                            if (currentUser != null) {
-                                notice = "Masuk sebagai ${currentUser.email ?: userDisplayName}"
-                            } else {
-                                notice = "Halaman Profil belum tersedia."
-                            }
-                        }
-                        else -> notice = "Halaman ${tab.label} belum tersedia."
-                    }
-                },
+                onTabSelected = onTabSelected,
             )
         },
     ) { insets ->
@@ -545,16 +544,28 @@ fun NotificationScreen(
                                 items = sectionItems,
                                 key = { _, item -> "notif:${item.id}" },
                             ) { index, item ->
+                                val isSystemNotice = item.type == NotificationType.WARNING ||
+                                    item.type == NotificationType.REPORT_SENT
                                 NotificationItemRow(
                                     item = item,
-                                    avatarColor = NotificationAvatarColors[
-                                        index % NotificationAvatarColors.size
-                                    ],
+                                    avatarColor = when (item.type) {
+                                        NotificationType.WARNING -> HomeOrange
+                                        NotificationType.REPORT_SENT -> Color(0xFF4CAF50)
+                                        else -> NotificationAvatarColors[
+                                            index % NotificationAvatarColors.size
+                                        ]
+                                    },
                                     onAvatarClick = {
-                                        onUserProfileClick(item.actorId, item.actorName)
+                                        if (isSystemNotice) {
+                                            selectedWarning = item
+                                        } else {
+                                            onUserProfileClick(item.actorId, item.actorName)
+                                        }
                                     },
                                     onClick = {
-                                        if (item.postId.isNotBlank()) {
+                                        if (isSystemNotice) {
+                                            selectedWarning = item
+                                        } else if (item.postId.isNotBlank()) {
                                             selectedPostId = item.postId
                                         } else {
                                             onUserProfileClick(item.actorId, item.actorName)
@@ -567,6 +578,44 @@ fun NotificationScreen(
                 }
             }
         }
+    }
+
+    selectedWarning?.let { infoNotif ->
+        val defaultTitle = if (infoNotif.type == NotificationType.REPORT_SENT) {
+            "Laporan Berhasil Dikirim"
+        } else {
+            "Notifikasi Warning"
+        }
+        val defaultDesc = if (infoNotif.type == NotificationType.REPORT_SENT) {
+            "Laporanmu telah diterima dan akan segera ditinjau serta ditindaklanjuti oleh Admin."
+        } else {
+            "Admin mengirimkan peringatan terkait aktivitas akun atau postingan Anda."
+        }
+        AlertDialog(
+            onDismissRequest = { selectedWarning = null },
+            title = {
+                Text(infoNotif.title.ifBlank { defaultTitle })
+            },
+            text = {
+                Text(infoNotif.description.ifBlank { defaultDesc })
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedWarning = null }) { Text("Mengerti") }
+            },
+            dismissButton = if (infoNotif.postId.isNotBlank()) {
+                {
+                    TextButton(
+                        onClick = {
+                            val targetPostId = infoNotif.postId
+                            selectedWarning = null
+                            selectedPostId = targetPostId
+                        },
+                    ) { Text("Lihat Postingan") }
+                }
+            } else {
+                null
+            },
+        )
     }
 
     notice?.let { message ->
@@ -617,11 +666,33 @@ private fun NotificationItemRow(
         }
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append(item.actorName)
+                when (item.type) {
+                    NotificationType.WARNING -> {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = HomeOrange)) {
+                            append(item.title.ifBlank { "Notifikasi Warning" })
+                        }
+                        if (item.description.isNotBlank()) {
+                            append(": ")
+                            append(item.description)
+                        }
+                    }
+                    NotificationType.REPORT_SENT -> {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF81C784))) {
+                            append(item.title.ifBlank { "Laporan Berhasil Dikirim" })
+                        }
+                        if (item.description.isNotBlank()) {
+                            append(": ")
+                            append(item.description)
+                        }
+                    }
+                    else -> {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(item.actorName)
+                        }
+                        append(" ")
+                        append(item.type.message)
+                    }
                 }
-                append(" ")
-                append(item.type.message)
             },
             color = HomeText,
             fontSize = 11.sp,

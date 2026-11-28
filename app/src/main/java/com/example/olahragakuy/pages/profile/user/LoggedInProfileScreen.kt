@@ -14,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.olahragakuy.pages.profile.admin.AdminProfileScreen
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.theme.KuyNavy
 import com.google.firebase.auth.FirebaseAuth
@@ -25,6 +26,8 @@ fun LoggedInProfileScreen(
     onHomeClick: () -> Unit,
     onLogout: () -> Unit,
     onTabSelected: (HomeNavTab) -> Unit = {},
+    initialRole: String = "member",
+    onOpenAdminDashboard: () -> Unit = {},
 ) {
     val refreshRegistry = LocalKuyRefresh.current
     val auth = remember { FirebaseAuth.getInstance() }
@@ -48,6 +51,7 @@ fun LoggedInProfileScreen(
         var username by remember { mutableStateOf(fallbackName) }
         var displayName by remember { mutableStateOf(fallbackName) }
         var bio by remember { mutableStateOf("") }
+        var userRole by remember(initialRole) { mutableStateOf(initialRole) }
         var followers by remember { mutableIntStateOf(0) }
         var followersSubCount by remember { mutableIntStateOf(0) }
         var following by remember { mutableIntStateOf(0) }
@@ -79,6 +83,8 @@ fun LoggedInProfileScreen(
                             displayName = (document?.get("displayName") as? String)
                                 ?.takeIf { it.isNotBlank() } ?: loadedUsername
                             bio = (document?.get("bio") as? String) ?: ""
+                            userRole = (document?.getString("role"))
+                                ?.takeIf { it.isNotBlank() } ?: initialRole
                             followers = (document?.get("followersCount") as? Number)?.toInt() ?: 0
                             following = (document?.get("followingCount") as? Number)?.toInt() ?: 0
                             showError = false
@@ -140,57 +146,84 @@ fun LoggedInProfileScreen(
                 }
             }
         } else {
-            ProfileScreen(
-                initialUsername = username,
-                initialDisplayName = displayName,
-                initialBio = bio,
-                followers = maxOf(followers, followersSubCount),
-                following = maxOf(following, followingSubCount),
-                feedPosts = userPosts,
-                gridPosts = userPosts,
-                taggedPosts = taggedPosts,
-                onBack = onBack,
-                onHomeClick = onHomeClick,
-                onTabSelected = onTabSelected,
-                onLogout = onLogout,
-                onProfileSaved = { updatedUsername, updatedBio ->
-                    username = updatedUsername
-                    displayName = updatedUsername
-                    bio = updatedBio
-                    saveUserProfileToFirestore(
-                        user = currentUser,
-                        username = updatedUsername,
-                        bio = updatedBio,
-                        onError = { saveError = it },
-                    )
-                },
-                onDeletePost = { post ->
-                    val previousPosts = userPosts
-                    userPosts = userPosts.filterNot { it.documentId == post.documentId }
-                    deleteUserPostFromFirestore(
-                        user = currentUser,
-                        documentId = post.documentId,
-                        onError = { err ->
-                            userPosts = previousPosts
-                            saveError = err
-                        },
-                    )
-                },
-                onEditPost = { post, newCaption ->
-                    val previousPosts = userPosts
-                    userPosts = userPosts.map {
-                        if (it.documentId == post.documentId) it.copy(caption = newCaption) else it
-                    }
-                    updateUserPostCaptionInFirestore(
-                        documentId = post.documentId,
-                        newCaption = newCaption,
-                        onError = { err ->
-                            userPosts = previousPosts
-                            saveError = err
-                        },
-                    )
-                },
-            )
+            val handleProfileSaved: (String, String) -> Unit = { updatedUsername, updatedBio ->
+                username = updatedUsername
+                displayName = updatedUsername
+                bio = updatedBio
+                saveUserProfileToFirestore(
+                    user = currentUser,
+                    username = updatedUsername,
+                    bio = updatedBio,
+                    onError = { saveError = it },
+                )
+            }
+            val handleDeletePost: (UserPost) -> Unit = { post ->
+                val previousPosts = userPosts
+                userPosts = userPosts.filterNot { it.documentId == post.documentId }
+                deleteUserPostFromFirestore(
+                    user = currentUser,
+                    documentId = post.documentId,
+                    onError = { err ->
+                        userPosts = previousPosts
+                        saveError = err
+                    },
+                )
+            }
+            val handleEditPost: (UserPost, String) -> Unit = { post, newCaption ->
+                val previousPosts = userPosts
+                userPosts = userPosts.map {
+                    if (it.documentId == post.documentId) it.copy(caption = newCaption) else it
+                }
+                updateUserPostCaptionInFirestore(
+                    documentId = post.documentId,
+                    newCaption = newCaption,
+                    onError = { err ->
+                        userPosts = previousPosts
+                        saveError = err
+                    },
+                )
+            }
+            val computedFollowers = maxOf(followers, followersSubCount)
+            val computedFollowing = maxOf(following, followingSubCount)
+
+            if (userRole.equals("admin", ignoreCase = true)) {
+                AdminProfileScreen(
+                    initialUsername = username,
+                    initialDisplayName = displayName,
+                    initialBio = bio,
+                    followers = computedFollowers,
+                    following = computedFollowing,
+                    feedPosts = userPosts,
+                    gridPosts = userPosts,
+                    taggedPosts = taggedPosts,
+                    onBack = onBack,
+                    onHomeClick = onHomeClick,
+                    onTabSelected = onTabSelected,
+                    onLogout = onLogout,
+                    onProfileSaved = handleProfileSaved,
+                    onDeletePost = handleDeletePost,
+                    onEditPost = handleEditPost,
+                    onOpenDashboardReport = onOpenAdminDashboard,
+                )
+            } else {
+                ProfileScreen(
+                    initialUsername = username,
+                    initialDisplayName = displayName,
+                    initialBio = bio,
+                    followers = computedFollowers,
+                    following = computedFollowing,
+                    feedPosts = userPosts,
+                    gridPosts = userPosts,
+                    taggedPosts = taggedPosts,
+                    onBack = onBack,
+                    onHomeClick = onHomeClick,
+                    onTabSelected = onTabSelected,
+                    onLogout = onLogout,
+                    onProfileSaved = handleProfileSaved,
+                    onDeletePost = handleDeletePost,
+                    onEditPost = handleEditPost,
+                )
+            }
         }
 
         if (showError) {

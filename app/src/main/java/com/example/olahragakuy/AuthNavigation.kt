@@ -49,6 +49,7 @@ import com.example.olahragakuy.pages.posts.ensureDirectChatRoom
 import com.example.olahragakuy.pages.posts.observeRealtimeBadges
 import com.example.olahragakuy.pages.posts.resolveDisplayName
 import com.example.olahragakuy.pages.drinkreminder.DrinkReminderScreen
+import com.example.olahragakuy.pages.profile.admin.AdminDashboardReportScreen
 import com.example.olahragakuy.pages.profile.user.LoggedInProfileScreen
 import com.example.olahragakuy.pages.profile.user.OtherUserProfileScreen
 import com.example.olahragakuy.pages.steptracker.StepTrackerScreen
@@ -789,7 +790,14 @@ fun AuthNavigation(
                 },
                 onHomeClick = { navigateToTab(HomeNavTab.KOMUNITAS) },
                 onTabSelected = navigateToTab,
+                initialRole = currentUserRole,
+                onOpenAdminDashboard = {
+                    navController.navigate("admin_dashboard_report") {
+                        launchSingleTop = true
+                    }
+                },
                 onLogout = {
+                    currentUserRole = "member"
                     GuidedWorkoutProgressStore.reset()
                     CustomWorkoutStore.clear()
                     TrainingStreakStore.reset()
@@ -803,6 +811,11 @@ fun AuthNavigation(
                 },
             )
         }
+        composable("admin_dashboard_report") {
+            AdminDashboardReportScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
         composable("create_post") {
             CreatePostScreen(
                 onBack = { navController.popBackStack() },
@@ -813,6 +826,7 @@ fun AuthNavigation(
             SearchPostScreen(
                 onBack = { navController.popBackStack() },
                 onUserProfileClick = navigateToUserProfile,
+                onTabSelected = navigateToTab,
             )
         }
         composable(
@@ -829,6 +843,7 @@ fun AuthNavigation(
                 onBack = { navController.popBackStack() },
                 initialSelectedPostId = postId,
                 onUserProfileClick = navigateToUserProfile,
+                onTabSelected = navigateToTab,
             )
         }
         composable(
