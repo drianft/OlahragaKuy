@@ -24,12 +24,13 @@ val DefaultPostCategories = listOf(
     "Kardio",
 )
 
-/** Jenis notifikasi aktivitas postingan & peringatan admin. */
+/** Jenis notifikasi aktivitas postingan, laporan pengguna, & peringatan admin. */
 enum class NotificationType(val code: String, val message: String) {
     LIKE("LIKE", "menyukai postingan anda"),
     COMMENT("COMMENT", "mengomentari postingan anda"),
     TAG("TAG", "menandai anda di sebuah postingan"),
-    WARNING("WARNING", "mengirim peringatan admin");
+    WARNING("WARNING", "mengirim peringatan admin"),
+    REPORT_SENT("REPORT_SENT", "laporan anda berhasil dikirim dan akan segera ditindaklanjuti");
 
     companion object {
         fun fromCode(raw: String?): NotificationType =

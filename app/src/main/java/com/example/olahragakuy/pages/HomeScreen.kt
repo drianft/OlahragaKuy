@@ -60,6 +60,8 @@ import com.example.olahragakuy.pages.posts.toPostUiModel
 import com.example.olahragakuy.pages.posts.togglePostLike
 import com.example.olahragakuy.pages.posts.withLocalState
 import com.example.olahragakuy.pages.profile.admin.ReportPostDialog
+import com.example.olahragakuy.pages.profile.admin.ReportSubmittedDialog
+import com.example.olahragakuy.pages.profile.admin.ReportSubmittedFeedback
 import com.example.olahragakuy.pages.profile.admin.submitPostReport
 import com.example.olahragakuy.ui.components.CreatePostPromptBar
 import com.example.olahragakuy.ui.components.HomeNavTab
@@ -93,6 +95,7 @@ fun HomeScreen(
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
     var postPendingReport by remember { mutableStateOf<PostUiModel?>(null) }
     var reportSubmitting by remember { mutableStateOf(false) }
+    var reportFeedback by remember { mutableStateOf<ReportSubmittedFeedback?>(null) }
     var posts by remember { mutableStateOf<List<PostUiModel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
@@ -241,7 +244,10 @@ fun HomeScreen(
                     onSuccess = {
                         reportSubmitting = false
                         postPendingReport = null
-                        notice = "Laporan untuk postingan @${targetPost.authorName} berhasil dikirim ke Admin."
+                        reportFeedback = ReportSubmittedFeedback(
+                            reportedUsername = targetPost.authorName,
+                            reportCategory = category,
+                        )
                     },
                     onError = { err ->
                         reportSubmitting = false
@@ -250,6 +256,14 @@ fun HomeScreen(
                     },
                 )
             },
+        )
+    }
+
+    reportFeedback?.let { feedback ->
+        ReportSubmittedDialog(
+            reportedUsername = feedback.reportedUsername,
+            reportCategory = feedback.reportCategory,
+            onDismiss = { reportFeedback = null },
         )
     }
 

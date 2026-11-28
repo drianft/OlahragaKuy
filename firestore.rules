@@ -183,6 +183,25 @@ service cloud.firestore {
         && data.createdAt == request.time;
     }
 
+    function isValidReportSubmittedNotification(data) {
+      return hasRequiredFields(['actorId', 'actorName', 'type', 'title', 'description', 'createdAt'])
+        && hasOnlyAllowedFields(['actorId', 'actorName', 'postId', 'type', 'title', 'description', 'createdAt'])
+        && data.actorId is string
+        && data.actorId == request.auth.uid
+        && data.actorName is string
+        && data.actorName.size() > 0
+        && data.actorName.size() <= 100
+        && (!('postId' in data) || (data.postId is string && data.postId.size() <= 100))
+        && data.type == 'REPORT_SENT'
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 120
+        && data.description is string
+        && data.description.size() <= 1000
+        && data.createdAt is timestamp
+        && data.createdAt == request.time;
+    }
+
     function isValidReportCreate(data) {
       return hasRequiredFields([
           'type', 'status', 'reportedUsername', 'reporterUserId',
@@ -371,9 +390,11 @@ service cloud.firestore {
         allow delete: if isOwner(userId)
           || (isAdmin() && resource.data.type == 'WARNING');
         allow create: if (isAuthenticated() && isValidNotification(request.resource.data))
+          || (isOwner(userId) && isValidReportSubmittedNotification(request.resource.data))
           || (isAdmin() && isValidAdminWarningNotification(request.resource.data));
         allow update: if isAuthenticated()
           && resource.data.type != 'WARNING'
+          && resource.data.type != 'REPORT_SENT'
           && resource.data.actorId == request.auth.uid
           && isValidNotification(request.resource.data);
       }
@@ -646,10 +667,18 @@ service cloud.firestore {
     }
 
     match /reports/{reportId} {
+      function isNotSelfReportedReport() {
+        return !('reportedUserId' in resource.data)
+          || resource.data.reportedUserId == ''
+          || resource.data.reportedUserId != request.auth.uid;
+      }
+
       allow read: if isAdmin();
       allow create: if isAuthenticated() && isValidReportCreate(request.resource.data);
-      allow update: if isAdmin() && (isValidReportResolutionUpdate() || isValidReportRestoreUpdate());
-      allow delete: if isAdmin();
+      allow update: if isAdmin()
+        && isNotSelfReportedReport()
+        && (isValidReportResolutionUpdate() || isValidReportRestoreUpdate());
+      allow delete: if isAdmin() && isNotSelfReportedReport();
     }
 
     match /venues/{venueId} {

@@ -252,4 +252,88 @@ class AdminReportRepositoryTest {
         assertEquals("Postingan Anda mengandung ujaran kebencian.", notif?.description)
         assertEquals("post-99", notif?.postId)
     }
+
+    @Test
+    fun buildAndParseReportSubmittedNotificationMatchesExpectedSchema() {
+        val payload = buildReportSubmittedNotificationPayload(
+            reporterUid = "uid-reporter",
+            reportedUsername = "BibiOlahraga",
+            postId = "post-77",
+            reportCategory = "Penipuan, penggelapan atau spam",
+            createdAt = "SERVER_TIME",
+        )
+        assertEquals("uid-reporter", payload["actorId"])
+        assertEquals("Admin OlahragaKuy", payload["actorName"])
+        assertEquals("post-77", payload["postId"])
+        assertEquals(NotificationType.REPORT_SENT.code, payload["type"])
+        assertEquals("Laporan Berhasil Dikirim", payload["title"])
+        assertTrue((payload["description"] as String).contains("@BibiOlahraga"))
+        assertEquals("SERVER_TIME", payload["createdAt"])
+
+        val parsed = parseNotificationUiModel(
+            id = "report_sent_rep1",
+            data = payload + ("createdAtMillis" to 1_760_000_000_000L),
+        )
+        assertEquals(NotificationType.REPORT_SENT, parsed?.type)
+        assertEquals("Laporan Berhasil Dikirim", parsed?.title)
+        assertEquals("post-77", parsed?.postId)
+    }
+
+    @Test
+    fun excludeSelfReportedAdminReportsHidesOwnReportsButShowsToOtherAdmins() {
+        val jamesReport = AdminReportItem(
+            id = "rep-james",
+            reportedUserId = "uid-james",
+            reportedUsername = "James",
+            reporterUsername = "ian",
+            reportCategory = "Penipuan, penggelapan atau spam",
+            reportDate = "28 November 2026",
+        )
+        val otherUserReport = AdminReportItem(
+            id = "rep-other",
+            reportedUserId = "uid-budi",
+            reportedUsername = "Budi",
+            reporterUsername = "ian",
+            reportCategory = "Aktivitas ilegal",
+            reportDate = "28 November 2026",
+        )
+        val legacyJamesReport = AdminReportItem(
+            id = "rep-james-legacy",
+            reportedUserId = "",
+            reportedUsername = "james",
+            reporterUsername = "ian",
+            reportCategory = "Aktivitas ilegal",
+            reportDate = "28 November 2026",
+        )
+
+        val allReports = listOf(jamesReport, otherUserReport, legacyJamesReport)
+
+        // Saat James login sebagai admin, laporan atas dirinya disembunyikan
+        val visibleToJames = excludeSelfReportedAdminReports(
+            reports = allReports,
+            currentAdminUid = "uid-james",
+            currentAdminUsernames = setOf("James"),
+        )
+        assertEquals(listOf("rep-other"), visibleToJames.map { it.id })
+
+        // Saat admin lain (ian) login, semua laporan termasuk milik James tetap muncul
+        val visibleToOtherAdmin = excludeSelfReportedAdminReports(
+            reports = allReports,
+            currentAdminUid = "uid-ian",
+            currentAdminUsernames = setOf("ian"),
+        )
+        assertEquals(listOf("rep-james", "rep-other", "rep-james-legacy"), visibleToOtherAdmin.map { it.id })
+
+        // Riwayat aksi terhadap diri sendiri juga disembunyikan dari admin bersangkutan
+        val historyItems = listOf(
+            SampleAdminHistoryItems.first().copy(id = "h-james", report = jamesReport),
+            SampleAdminHistoryItems.first().copy(id = "h-other", report = otherUserReport),
+        )
+        val historyForJames = excludeSelfReportedAdminHistory(
+            items = historyItems,
+            currentAdminUid = "uid-james",
+            currentAdminUsernames = setOf("James"),
+        )
+        assertEquals(listOf("h-other"), historyForJames.map { it.id })
+    }
 }

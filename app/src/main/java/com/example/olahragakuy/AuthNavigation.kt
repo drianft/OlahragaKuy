@@ -639,12 +639,14 @@ fun AuthNavigation(
             SearchPostScreen(
                 onBack = { navController.popBackStack() },
                 onUserProfileClick = navigateToUserProfile,
+                onTabSelected = navigateToTab,
             )
         }
         composable("notifications") {
             NotificationScreen(
                 onBack = { navController.popBackStack() },
                 onUserProfileClick = navigateToUserProfile,
+                onTabSelected = navigateToTab,
             )
         }
         composable(

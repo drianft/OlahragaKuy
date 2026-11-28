@@ -87,6 +87,7 @@ fun SearchPostScreen(
     initialQuery: String = "",
     initialShowResults: Boolean = false,
     onUserProfileClick: (userId: String, displayName: String) -> Unit = { _, _ -> },
+    onTabSelected: (HomeNavTab) -> Unit = {},
 ) {
     val isPreview = LocalInspectionMode.current
     val focusManager = LocalFocusManager.current
@@ -127,7 +128,6 @@ fun SearchPostScreen(
     }
 
     val currentUser = remember { currentUserOrNull() }
-    val userDisplayName = remember(currentUser) { currentUser.resolveDisplayName() }
 
     val effectivePosts = posts.map { it.withLocalState() }
     val suggestions = remember(effectivePosts, query) {
@@ -173,19 +173,7 @@ fun SearchPostScreen(
             if (showResults) {
                 KuyBottomNavBar(
                     selectedTab = HomeNavTab.KOMUNITAS,
-                    onTabSelected = { tab ->
-                        when (tab) {
-                            HomeNavTab.KOMUNITAS -> onBack()
-                            HomeNavTab.PROFIL -> {
-                                if (currentUser != null) {
-                                    notice = "Masuk sebagai ${currentUser.email ?: userDisplayName}"
-                                } else {
-                                    notice = "Halaman Profil belum tersedia."
-                                }
-                            }
-                            else -> notice = "Halaman ${tab.label} belum tersedia."
-                        }
-                    },
+                    onTabSelected = onTabSelected,
                 )
             }
         },

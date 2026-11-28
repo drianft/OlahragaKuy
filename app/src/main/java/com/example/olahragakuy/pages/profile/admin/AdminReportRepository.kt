@@ -1,6 +1,8 @@
 package com.example.olahragakuy.pages.profile.admin
 
+import com.example.olahragakuy.pages.posts.LocalNotifications
 import com.example.olahragakuy.pages.posts.NotificationType
+import com.example.olahragakuy.pages.posts.NotificationUiModel
 import com.example.olahragakuy.pages.posts.PostUiModel
 import com.example.olahragakuy.pages.posts.currentUserOrNull
 import com.example.olahragakuy.pages.posts.resolveDisplayName
@@ -474,6 +476,75 @@ internal fun buildAdminWarningNotificationPayload(
     }
 }
 
+internal fun buildReportSubmittedNotificationPayload(
+    reporterUid: String,
+    reportedUsername: String,
+    postId: String?,
+    reportCategory: String,
+    createdAt: Any = FieldValue.serverTimestamp(),
+): Map<String, Any> {
+    val cleanReported = reportedUsername.trim().ifEmpty { "Pengguna" }.take(100)
+    val cleanCategory = reportCategory.trim().ifEmpty { DefaultAdminReportCategories.first() }.take(120)
+    val description =
+        "Laporanmu terhadap postingan @$cleanReported ($cleanCategory) telah diterima dan akan segera ditinjau serta ditindaklanjuti oleh Admin."
+    return buildMap {
+        put("actorId", reporterUid.trim())
+        put("actorName", "Admin OlahragaKuy")
+        if (!postId.isNullOrBlank()) {
+            put("postId", postId.trim().take(100))
+        }
+        put("type", NotificationType.REPORT_SENT.code)
+        put("title", "Laporan Berhasil Dikirim")
+        put("description", description.take(1000))
+        put("createdAt", createdAt)
+    }
+}
+
+private fun recordReportSubmittedNotification(
+    db: FirebaseFirestore,
+    reporterUid: String,
+    reportDocId: String,
+    reportedUsername: String,
+    postId: String?,
+    reportCategory: String,
+) {
+    val cleanUid = reporterUid.trim()
+    if (cleanUid.isEmpty()) return
+    val cleanReported = reportedUsername.trim().ifEmpty { "Pengguna" }.take(100)
+    val cleanCategory = reportCategory.trim().ifEmpty { DefaultAdminReportCategories.first() }.take(120)
+    val notifId = "report_sent_${reportDocId.ifBlank { System.currentTimeMillis().toString() }}"
+    val title = "Laporan Berhasil Dikirim"
+    val description =
+        "Laporanmu terhadap postingan @$cleanReported ($cleanCategory) telah diterima dan akan segera ditinjau serta ditindaklanjuti oleh Admin."
+
+    LocalNotifications.removeAll { it.id == notifId }
+    LocalNotifications.add(
+        0,
+        NotificationUiModel(
+            id = notifId,
+            actorId = cleanUid,
+            actorName = "Admin OlahragaKuy",
+            type = NotificationType.REPORT_SENT,
+            postId = postId?.trim().orEmpty(),
+            createdAtMillis = System.currentTimeMillis(),
+            title = title,
+            description = description,
+        ),
+    )
+
+    val payload = buildReportSubmittedNotificationPayload(
+        reporterUid = cleanUid,
+        reportedUsername = cleanReported,
+        postId = postId,
+        reportCategory = cleanCategory,
+    )
+    db.collection("users")
+        .document(cleanUid)
+        .collection("notifications")
+        .document(notifId)
+        .set(payload)
+}
+
 internal fun mapAdminFirestoreError(error: Throwable, fallback: String): String {
     val isDenied = (error as? FirebaseFirestoreException)?.code ==
         FirebaseFirestoreException.Code.PERMISSION_DENIED ||
@@ -484,6 +555,55 @@ internal fun mapAdminFirestoreError(error: Throwable, fallback: String): String 
         error.localizedMessage?.takeIf { it.isNotBlank() } ?: fallback
     }
 }
+
+private const val SELF_MODERATION_ERROR =
+    "Anda tidak dapat menindak laporan terhadap akun atau postingan Anda sendiri. Laporan ini hanya dapat ditinjau oleh admin lain."
+
+/**
+ * Menentukan apakah sebuah laporan menargetkan akun/postingan milik admin yang sedang login.
+ * Jika `reportedUserId` tersedia, pencocokan dilakukan langsung dengan UID; jika kosong (data lama),
+ * dilakukan fallback pencocokan username/displayName secara case-insensitive.
+ */
+internal fun isSelfReportedByAdmin(
+    report: AdminReportItem,
+    currentAdminUid: String?,
+    currentAdminUsernames: Set<String> = emptySet(),
+): Boolean {
+    val cleanUid = currentAdminUid?.trim().orEmpty()
+    val reportedUid = report.reportedUserId.trim()
+    if (cleanUid.isNotEmpty() && reportedUid.isNotEmpty()) {
+        return reportedUid == cleanUid
+    }
+    if (reportedUid.isEmpty() && currentAdminUsernames.isNotEmpty()) {
+        val reportedName = report.reportedUsername.trim()
+        if (reportedName.isNotEmpty() &&
+            currentAdminUsernames.any { it.equals(reportedName, ignoreCase = true) }
+        ) {
+            return true
+        }
+    }
+    return false
+}
+
+internal fun excludeSelfReportedAdminReports(
+    reports: List<AdminReportItem>,
+    currentAdminUid: String?,
+    currentAdminUsernames: Set<String> = emptySet(),
+): List<AdminReportItem> =
+    reports.filterNot { isSelfReportedByAdmin(it, currentAdminUid, currentAdminUsernames) }
+
+internal fun excludeSelfReportedAdminHistory(
+    items: List<AdminActionHistoryItem>,
+    currentAdminUid: String?,
+    currentAdminUsernames: Set<String> = emptySet(),
+): List<AdminActionHistoryItem> =
+    items.filterNot { isSelfReportedByAdmin(it.report, currentAdminUid, currentAdminUsernames) }
+
+private fun initialAdminAliases(admin: FirebaseUser?): Set<String> =
+    buildSet {
+        admin?.displayName?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+        admin?.email?.substringBefore("@")?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+    }
 
 private fun resolveAdminActorName(
     db: FirebaseFirestore,
@@ -507,51 +627,128 @@ private fun resolveAdminActorName(
 
 /**
  * Mengamati daftar laporan berstatus PENDING dari Firestore secara real-time.
- * Pengurutan dilakukan di sisi klien agar tidak memerlukan composite index manual.
+ * Laporan terhadap akun/postingan milik admin yang sedang login otomatis dikecualikan agar
+ * hanya dapat ditinjau dan ditindak oleh admin lain.
  */
 fun observePendingAdminReports(
     db: FirebaseFirestore = FirebaseFirestore.getInstance(),
     onReportsChanged: (List<AdminReportItem>) -> Unit,
     onError: (String) -> Unit,
 ): ListenerRegistration {
-    return db.collection(REPORTS_COLLECTION)
+    val currentAdmin = currentUserOrNull()
+    val currentAdminUid = currentAdmin?.uid
+    var adminAliases = initialAdminAliases(currentAdmin)
+    var latestRawItems: List<AdminReportItem>? = null
+    var disposed = false
+
+    if (currentAdmin != null) {
+        db.collection("users")
+            .document(currentAdmin.uid)
+            .get()
+            .addOnSuccessListener { doc ->
+                if (disposed) return@addOnSuccessListener
+                val fetchedAliases = buildSet {
+                    addAll(adminAliases)
+                    doc.getString("username")?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+                    doc.getString("displayName")?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+                    doc.getString("name")?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+                }
+                if (fetchedAliases != adminAliases) {
+                    adminAliases = fetchedAliases
+                    latestRawItems?.let { raw ->
+                        onReportsChanged(
+                            excludeSelfReportedAdminReports(raw, currentAdminUid, adminAliases),
+                        )
+                    }
+                }
+            }
+    }
+
+    val registration = db.collection(REPORTS_COLLECTION)
         .whereEqualTo("status", REPORT_STATUS_PENDING)
         .addSnapshotListener { snapshot, error ->
+            if (disposed) return@addSnapshotListener
             if (error != null) {
                 onError(mapAdminFirestoreError(error, "Gagal memuat daftar laporan."))
                 return@addSnapshotListener
             }
             val nowMillis = System.currentTimeMillis()
-            val items = snapshot?.documents.orEmpty()
+            val rawItems = snapshot?.documents.orEmpty()
                 .map { doc -> parseAdminReportItem(doc.id, doc.data.orEmpty(), nowMillis) }
                 .sortedByDescending { it.createdAtMillis }
-            onReportsChanged(items)
+            latestRawItems = rawItems
+            onReportsChanged(
+                excludeSelfReportedAdminReports(rawItems, currentAdminUid, adminAliases),
+            )
         }
+
+    return ListenerRegistration {
+        disposed = true
+        registration.remove()
+    }
 }
 
 /**
  * Mengamati riwayat aksi moderasi dari SELURUH pengguna dengan role admin secara real-time.
- * Semua dokumen `reports` yang sudah ditangani (`IGNORED`, `RESOLVED_DELETED`, `RESOLVED_WARNED`)
- * digabung dan diurutkan berdasarkan waktu aksi terbaru di sisi klien.
+ * Riwayat laporan yang menargetkan akun/postingan milik admin yang sedang login dikecualikan
+ * agar admin tidak dapat memulihkan atau menghapus tindakan moderasi terhadap dirinya sendiri.
  */
 fun observeAdminActionHistory(
     db: FirebaseFirestore = FirebaseFirestore.getInstance(),
     onHistoryChanged: (List<AdminActionHistoryItem>) -> Unit,
     onError: (String) -> Unit,
 ): ListenerRegistration {
-    return db.collection(REPORTS_COLLECTION)
+    val currentAdmin = currentUserOrNull()
+    val currentAdminUid = currentAdmin?.uid
+    var adminAliases = initialAdminAliases(currentAdmin)
+    var latestRawItems: List<AdminActionHistoryItem>? = null
+    var disposed = false
+
+    if (currentAdmin != null) {
+        db.collection("users")
+            .document(currentAdmin.uid)
+            .get()
+            .addOnSuccessListener { doc ->
+                if (disposed) return@addOnSuccessListener
+                val fetchedAliases = buildSet {
+                    addAll(adminAliases)
+                    doc.getString("username")?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+                    doc.getString("displayName")?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+                    doc.getString("name")?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+                }
+                if (fetchedAliases != adminAliases) {
+                    adminAliases = fetchedAliases
+                    latestRawItems?.let { raw ->
+                        onHistoryChanged(
+                            excludeSelfReportedAdminHistory(raw, currentAdminUid, adminAliases),
+                        )
+                    }
+                }
+            }
+    }
+
+    val registration = db.collection(REPORTS_COLLECTION)
         .whereIn("status", RESOLVED_REPORT_STATUSES)
         .addSnapshotListener { snapshot, error ->
+            if (disposed) return@addSnapshotListener
             if (error != null) {
                 onError(mapAdminFirestoreError(error, "Gagal memuat riwayat aksi admin."))
                 return@addSnapshotListener
             }
             val nowMillis = System.currentTimeMillis()
-            val items = snapshot?.documents.orEmpty()
+            val rawItems = snapshot?.documents.orEmpty()
                 .mapNotNull { doc -> parseAdminActionHistoryItem(doc.id, doc.data.orEmpty(), nowMillis) }
                 .sortedByDescending { it.actionTimestampMillis }
-            onHistoryChanged(items)
+            latestRawItems = rawItems
+            onHistoryChanged(
+                excludeSelfReportedAdminHistory(rawItems, currentAdminUid, adminAliases),
+            )
         }
+
+    return ListenerRegistration {
+        disposed = true
+        registration.remove()
+    }
 }
 
 /** Mengirim laporan baru untuk sebuah [PostUiModel] ke koleksi `reports`. */
@@ -586,7 +783,17 @@ fun submitPostReport(
     )
     db.collection(REPORTS_COLLECTION)
         .add(payload)
-        .addOnSuccessListener { onSuccess() }
+        .addOnSuccessListener { docRef ->
+            recordReportSubmittedNotification(
+                db = db,
+                reporterUid = user.uid,
+                reportDocId = docRef.id,
+                reportedUsername = post.authorName,
+                postId = post.id,
+                reportCategory = reportCategory,
+            )
+            onSuccess()
+        }
         .addOnFailureListener { e ->
             onError(e.localizedMessage ?: "Gagal mengirim laporan ke server.")
         }
@@ -623,7 +830,17 @@ fun submitUserPostReport(
     )
     db.collection(REPORTS_COLLECTION)
         .add(payload)
-        .addOnSuccessListener { onSuccess() }
+        .addOnSuccessListener { docRef ->
+            recordReportSubmittedNotification(
+                db = db,
+                reporterUid = user.uid,
+                reportDocId = docRef.id,
+                reportedUsername = reportedUsername,
+                postId = post.documentId,
+                reportCategory = reportCategory,
+            )
+            onSuccess()
+        }
         .addOnFailureListener { e ->
             onError(e.localizedMessage ?: "Gagal mengirim laporan ke server.")
         }
@@ -639,6 +856,10 @@ fun ignoreAdminReport(
     val admin = currentUserOrNull()
     if (admin == null) {
         onError("Sesi admin tidak ditemukan. Silakan masuk kembali.")
+        return
+    }
+    if (isSelfReportedByAdmin(report, admin.uid, initialAdminAliases(admin))) {
+        onError(SELF_MODERATION_ERROR)
         return
     }
     resolveAdminActorName(db, admin) { adminName ->
@@ -671,6 +892,10 @@ fun deleteReportedPost(
     val admin = currentUserOrNull()
     if (admin == null) {
         onError("Sesi admin tidak ditemukan. Silakan masuk kembali.")
+        return
+    }
+    if (isSelfReportedByAdmin(report, admin.uid, initialAdminAliases(admin))) {
+        onError(SELF_MODERATION_ERROR)
         return
     }
     val postId = report.postDocumentId?.trim().orEmpty()
@@ -732,9 +957,17 @@ fun sendAdminWarningNotification(
         onError("Sesi admin tidak ditemukan. Silakan masuk kembali.")
         return
     }
+    if (isSelfReportedByAdmin(report, admin.uid, initialAdminAliases(admin))) {
+        onError(SELF_MODERATION_ERROR)
+        return
+    }
 
     resolveAdminActorName(db, admin) { adminName ->
         fun commitWarningForUser(targetUid: String) {
+            if (targetUid.trim() == admin.uid) {
+                onError(SELF_MODERATION_ERROR)
+                return
+            }
             val batch = db.batch()
             val notifRef = db.collection("users")
                 .document(targetUid)
@@ -812,6 +1045,10 @@ fun permanentlyDeleteAdminHistoryItem(
         onError("Sesi admin tidak ditemukan. Silakan masuk kembali.")
         return
     }
+    if (isSelfReportedByAdmin(item.report, admin.uid, initialAdminAliases(admin))) {
+        onError(SELF_MODERATION_ERROR)
+        return
+    }
     val batch = db.batch()
     batch.delete(db.collection(REPORTS_COLLECTION).document(item.id))
     val postId = item.report.postDocumentId?.trim().orEmpty()
@@ -840,6 +1077,10 @@ fun restoreAdminHistoryItem(
     val admin = currentUserOrNull()
     if (admin == null) {
         onError("Sesi admin tidak ditemukan. Silakan masuk kembali.")
+        return
+    }
+    if (isSelfReportedByAdmin(item.report, admin.uid, initialAdminAliases(admin))) {
+        onError(SELF_MODERATION_ERROR)
         return
     }
     val batch = db.batch()

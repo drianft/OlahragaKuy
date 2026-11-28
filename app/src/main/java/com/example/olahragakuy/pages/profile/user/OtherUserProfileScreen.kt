@@ -14,6 +14,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.olahragakuy.pages.profile.admin.ReportPostDialog
+import com.example.olahragakuy.pages.profile.admin.ReportSubmittedDialog
+import com.example.olahragakuy.pages.profile.admin.ReportSubmittedFeedback
 import com.example.olahragakuy.pages.profile.admin.submitUserPostReport
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.KuyBottomNavBar
@@ -57,6 +59,7 @@ fun OtherUserProfileScreen(
     var actionError by remember(cleanTargetUid) { mutableStateOf<String?>(null) }
     var postPendingReport by remember(cleanTargetUid) { mutableStateOf<UserPost?>(null) }
     var reportSubmitting by remember(cleanTargetUid) { mutableStateOf(false) }
+    var reportFeedback by remember(cleanTargetUid) { mutableStateOf<ReportSubmittedFeedback?>(null) }
     var retry by remember(cleanTargetUid) { mutableIntStateOf(0) }
 
     DisposableEffect(cleanTargetUid, fallbackName, currentUser?.uid, retry) {
@@ -258,7 +261,10 @@ fun OtherUserProfileScreen(
                     onSuccess = {
                         reportSubmitting = false
                         postPendingReport = null
-                        actionError = "Laporan untuk postingan @$reportedName berhasil dikirim ke Admin."
+                        reportFeedback = ReportSubmittedFeedback(
+                            reportedUsername = reportedName,
+                            reportCategory = category,
+                        )
                     },
                     onError = { err ->
                         reportSubmitting = false
@@ -267,6 +273,14 @@ fun OtherUserProfileScreen(
                     },
                 )
             },
+        )
+    }
+
+    reportFeedback?.let { feedback ->
+        ReportSubmittedDialog(
+            reportedUsername = feedback.reportedUsername,
+            reportCategory = feedback.reportCategory,
+            onDismiss = { reportFeedback = null },
         )
     }
 
