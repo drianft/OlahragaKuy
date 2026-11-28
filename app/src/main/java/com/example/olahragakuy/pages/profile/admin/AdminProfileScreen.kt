@@ -54,6 +54,7 @@ fun AdminProfileScreen(
     onTabSelected: (HomeNavTab) -> Unit = {},
     onProfileSaved: (username: String, bio: String) -> Unit = { _, _ -> },
     onDeletePost: ((UserPost) -> Unit)? = null,
+    onOpenEditPost: ((UserPost) -> Unit)? = null,
     onEditPost: ((UserPost, String) -> Unit)? = null,
     onOpenDashboardReport: (() -> Unit)? = null,
 ) {
@@ -179,6 +180,7 @@ fun AdminProfileScreen(
                 onTabSelected = onTabSelected,
                 onProfileSaved = onProfileSaved,
                 onDeletePost = onDeletePost,
+                onOpenEditPost = onOpenEditPost,
                 onEditPost = onEditPost,
                 showAdminDashboard = true,
                 onAdminDashboardClick = {

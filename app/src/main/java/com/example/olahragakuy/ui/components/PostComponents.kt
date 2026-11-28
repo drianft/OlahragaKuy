@@ -249,7 +249,6 @@ fun HomePostCard(
     isLiked: Boolean = false,
     onLikeClick: (() -> Unit)? = null,
     onAuthorClick: (() -> Unit)? = null,
-    onReportClick: (() -> Unit)? = null,
     preparedImage: androidx.compose.ui.graphics.painter.Painter? = null,
     isOwnPost: Boolean = false,
     isReported: Boolean = false,

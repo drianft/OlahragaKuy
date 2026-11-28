@@ -500,7 +500,7 @@ internal fun buildReportSubmittedNotificationPayload(
     }
 }
 
-private fun recordReportSubmittedNotification(
+internal fun recordReportSubmittedNotification(
     db: FirebaseFirestore,
     reporterUid: String,
     reportDocId: String,

@@ -72,10 +72,8 @@ import com.example.olahragakuy.pages.posts.toPostUiModel
 import com.example.olahragakuy.pages.posts.togglePostLike
 import com.example.olahragakuy.pages.posts.withLocalState
 import com.example.olahragakuy.pages.profile.user.deleteUserPostFromFirestore
-import com.example.olahragakuy.pages.profile.admin.ReportPostDialog
 import com.example.olahragakuy.pages.profile.admin.ReportSubmittedDialog
 import com.example.olahragakuy.pages.profile.admin.ReportSubmittedFeedback
-import com.example.olahragakuy.pages.profile.admin.submitPostReport
 import com.example.olahragakuy.ui.components.CreatePostPromptBar
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.HomePostCard
@@ -303,7 +301,6 @@ fun HomeScreen(
                             onAction = { notice = it },
                             onCommentClick = { activeCommentPostId = post.id },
                             onAuthorClick = { onUserProfileClick(post.authorId, post.authorName) },
-                            onReportClick = { postPendingReport = post },
                         )
                     }
                 }
@@ -388,11 +385,14 @@ fun HomeScreen(
                     post = targetPost,
                     reason = reason,
                     detail = detail,
-                    onSuccess = { message ->
+                    onSuccess = { _ ->
                         reportSubmitting = false
                         postPendingReport = null
                         reportError = null
-                        notice = message
+                        reportFeedback = ReportSubmittedFeedback(
+                            reportedUsername = targetPost.authorName,
+                            reportCategory = reason.label,
+                        )
                     },
                     onError = { err ->
                         reportSubmitting = false
@@ -400,6 +400,14 @@ fun HomeScreen(
                     },
                 )
             },
+        )
+    }
+
+    reportFeedback?.let { feedback ->
+        ReportSubmittedDialog(
+            reportedUsername = feedback.reportedUsername,
+            reportCategory = feedback.reportCategory,
+            onDismiss = { reportFeedback = null },
         )
     }
 

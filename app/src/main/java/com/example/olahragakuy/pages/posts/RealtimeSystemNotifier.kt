@@ -71,6 +71,14 @@ fun buildSocialNotificationContent(
             title = "Suka Baru",
             body = "$cleanActor menyukai postingan Anda.",
         )
+        NotificationType.WARNING -> SystemNotificationContent(
+            title = "Peringatan Admin",
+            body = "Admin mengirimkan peringatan terkait postingan atau akun Anda.",
+        )
+        NotificationType.REPORT_SENT -> SystemNotificationContent(
+            title = "Laporan Berhasil Dikirim",
+            body = "Laporan Anda telah diterima dan akan segera ditinjau oleh Admin.",
+        )
     }
 }
 
