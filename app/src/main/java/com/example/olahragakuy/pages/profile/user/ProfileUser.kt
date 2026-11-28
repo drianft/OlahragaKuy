@@ -30,6 +30,9 @@ fun ProfileScreen(
     onHomeClick: () -> Unit = {},
     onTabSelected: (HomeNavTab) -> Unit = {},
     onProfileSaved: (username: String, bio: String) -> Unit = { _, _ -> },
+    showAdminDashboard: Boolean = false,
+    onAdminDashboardClick: () -> Unit = {},
+    onMenuClick: (() -> Unit)? = null,
     onDeletePost: ((UserPost) -> Unit)? = {},
     onEditPost: ((UserPost, String) -> Unit)? = { _, _ -> },
     onOpenEditPost: ((UserPost) -> Unit)? = null,
@@ -87,9 +90,17 @@ fun ProfileScreen(
                     selectedTab = currentState.selectedTab,
                     onTabSelected = { state = state.selectTab(it) },
                     onBack = onBack,
-                    onMenu = { state = state.openSettings() },
+                    onMenu = {
+                        if (onMenuClick != null) {
+                            onMenuClick()
+                        } else {
+                            state = state.openSettings()
+                        }
+                    },
                     onEditProfile = { state = state.openEdit() },
-                    onShareProfile = {}
+                    onShareProfile = {},
+                    showAdminDashboard = showAdminDashboard,
+                    onAdminDashboardClick = onAdminDashboardClick,
                 )
             }
             val contentModifier = Modifier.fillMaxSize().padding(padding)

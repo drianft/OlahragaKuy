@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.example.olahragakuy.pages.posts.EditPostTarget
+import com.example.olahragakuy.pages.profile.admin.AdminProfileScreen
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.theme.KuyNavy
 import com.google.firebase.auth.FirebaseAuth
@@ -27,6 +28,8 @@ fun LoggedInProfileScreen(
     onLogout: () -> Unit,
     onTabSelected: (HomeNavTab) -> Unit = {},
     onEditPostRequest: ((EditPostTarget) -> Unit)? = null,
+    initialRole: String = "member",
+    onOpenAdminDashboard: () -> Unit = {},
 ) {
     val refreshRegistry = LocalKuyRefresh.current
     val auth = remember { FirebaseAuth.getInstance() }
@@ -50,6 +53,7 @@ fun LoggedInProfileScreen(
         var username by remember { mutableStateOf(fallbackName) }
         var displayName by remember { mutableStateOf(fallbackName) }
         var bio by remember { mutableStateOf("") }
+        var userRole by remember(initialRole) { mutableStateOf(initialRole) }
         var followers by remember { mutableIntStateOf(0) }
         var followersSubCount by remember { mutableIntStateOf(0) }
         var following by remember { mutableIntStateOf(0) }
@@ -81,6 +85,8 @@ fun LoggedInProfileScreen(
                             displayName = (document?.get("displayName") as? String)
                                 ?.takeIf { it.isNotBlank() } ?: loadedUsername
                             bio = (document?.get("bio") as? String) ?: ""
+                            userRole = (document?.getString("role"))
+                                ?.takeIf { it.isNotBlank() } ?: initialRole
                             followers = (document?.get("followersCount") as? Number)?.toInt() ?: 0
                             following = (document?.get("followingCount") as? Number)?.toInt() ?: 0
                             showError = false

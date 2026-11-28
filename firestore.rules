@@ -32,14 +32,31 @@ rules_version = '2';
 //   - title: string (required, 1..120 chars)
 //   - description: string (required, 0..1000 chars)
 //   - createdAt: timestamp (required, == request.time)
-// Fields (report submitted notifications, owner-only):
-//   - actorId: string (required, == request.auth.uid)
-//   - actorName: string (required, 1..100 chars)
-//   - postId: string (optional, 0..100 chars)
-//   - type: string (required, == 'REPORT_SENT')
-//   - title: string (required, 1..120 chars)
-//   - description: string (required, 0..1000 chars)
+//
+// Collection: reports/{reportId}
+// Fields:
+//   - type: string (required, in ['POST', 'COMMENT', 'LOCATION', 'ACCOUNT'])
+//   - status: string (required, 'PENDING' on create; admin may transition to 'IGNORED', 'RESOLVED_DELETED', 'RESOLVED_WARNED')
+//   - reportedUserId: string (optional, 0..128 chars)
+//   - reportedUsername: string (required, 1..100 chars)
+//   - reporterUserId: string (required, == request.auth.uid)
+//   - reporterUsername: string (required, 1..100 chars)
+//   - reportCategory: string (required, 1..120 chars)
+//   - reportDescription: string (optional, 0..1000 chars)
+//   - contentPreview: string (optional, 0..500 chars)
+//   - thumbnailUrl: string (optional, 0..1000 chars)
+//   - postDocumentId: string (optional, 0..128 chars)
+//   - postTime: string (optional, 0..64 chars)
+//   - likesCount, commentsCount, sharesCount: int (optional, >= 0)
 //   - createdAt: timestamp (required, == request.time)
+//   - resolvedBy: string (admin update only, == request.auth.uid)
+//   - resolvedByName: string (admin update only, 1..100 chars)
+//   - resolvedAt: timestamp (admin update only, == request.time)
+//   - warningTitle: string (admin update only, 0..120 chars)
+//   - warningDescription: string (admin update only, 0..1000 chars)
+//   - warningNotificationId: string (admin update only, 0..128 chars)
+//   - warningRecipientUid: string (admin update only, 0..128 chars)
+//   - deletedPostBackup: map (admin update only, snapshot of deleted post for restore)
 //
 // Subcollection: users/{userId}/streak_days/{dateKey}
 // Fields:

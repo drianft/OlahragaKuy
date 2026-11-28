@@ -72,6 +72,10 @@ import com.example.olahragakuy.pages.posts.toPostUiModel
 import com.example.olahragakuy.pages.posts.togglePostLike
 import com.example.olahragakuy.pages.posts.withLocalState
 import com.example.olahragakuy.pages.profile.user.deleteUserPostFromFirestore
+import com.example.olahragakuy.pages.profile.admin.ReportPostDialog
+import com.example.olahragakuy.pages.profile.admin.ReportSubmittedDialog
+import com.example.olahragakuy.pages.profile.admin.ReportSubmittedFeedback
+import com.example.olahragakuy.pages.profile.admin.submitPostReport
 import com.example.olahragakuy.ui.components.CreatePostPromptBar
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.HomePostCard
@@ -112,6 +116,7 @@ fun HomeScreen(
     var reportSubmitting by remember { mutableStateOf(false) }
     var reportError by remember { mutableStateOf<String?>(null) }
     var postPendingDelete by remember { mutableStateOf<PostUiModel?>(null) }
+    var reportFeedback by remember { mutableStateOf<ReportSubmittedFeedback?>(null) }
     var posts by remember { mutableStateOf<List<PostUiModel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var feedError by remember { mutableStateOf<String?>(null) }
@@ -298,6 +303,7 @@ fun HomeScreen(
                             onAction = { notice = it },
                             onCommentClick = { activeCommentPostId = post.id },
                             onAuthorClick = { onUserProfileClick(post.authorId, post.authorName) },
+                            onReportClick = { postPendingReport = post },
                         )
                     }
                 }
