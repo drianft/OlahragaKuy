@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +38,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
@@ -183,8 +185,26 @@ fun NotificationScreen(
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
 
+    val context = LocalContext.current
     val currentUser = remember { currentUserOrNull() }
     val userDisplayName = remember(currentUser) { currentUser.resolveDisplayName() }
+
+    if (!isPreview) {
+        DisposableEffect(currentUser?.uid) {
+            RealtimeBadgeStore.setNotificationScreenOpen(
+                isOpen = true,
+                userId = currentUser?.uid,
+                context = context,
+            )
+            onDispose {
+                RealtimeBadgeStore.setNotificationScreenOpen(
+                    isOpen = false,
+                    userId = currentUser?.uid,
+                    context = context,
+                )
+            }
+        }
+    }
 
     DisposableEffect(isPreview, currentUser?.uid, retry) {
         var notifListener: ListenerRegistration? = null
@@ -362,6 +382,17 @@ fun NotificationScreen(
     } else {
         (localSnapshot + remoteNotifications + derivedNotifications)
             .distinctBy { "${it.type.code}:${it.postId}:${it.actorName.lowercase()}" }
+    }
+
+    if (!isPreview) {
+        val latestNotifMillis = allNotifications.maxOfOrNull { it.createdAtMillis } ?: 0L
+        LaunchedEffect(currentUser?.uid, latestNotifMillis) {
+            RealtimeBadgeStore.markNotificationsSeen(
+                userId = currentUser?.uid,
+                latestTimestampMillis = maxOf(System.currentTimeMillis(), latestNotifMillis),
+                context = context,
+            )
+        }
     }
 
     val groupedNotifications = remember(allNotifications, isPreview) {

@@ -1,6 +1,10 @@
 package com.example.olahragakuy
 
+import android.Manifest
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -36,9 +40,13 @@ import com.example.olahragakuy.pages.clearGoogleCredentialState
 import com.example.olahragakuy.pages.posts.ChatScreen
 import com.example.olahragakuy.pages.posts.CreatePostScreen
 import com.example.olahragakuy.pages.posts.NotificationScreen
+import com.example.olahragakuy.pages.posts.RealtimeBadgePrefs
+import com.example.olahragakuy.pages.posts.RealtimeBadgeStore
+import com.example.olahragakuy.pages.posts.RealtimeSystemNotifier
 import com.example.olahragakuy.pages.posts.SearchPostScreen
 import com.example.olahragakuy.pages.posts.currentUserOrNull
 import com.example.olahragakuy.pages.posts.ensureDirectChatRoom
+import com.example.olahragakuy.pages.posts.observeRealtimeBadges
 import com.example.olahragakuy.pages.posts.resolveDisplayName
 import com.example.olahragakuy.pages.drinkreminder.DrinkReminderScreen
 import com.example.olahragakuy.pages.profile.user.LoggedInProfileScreen
@@ -87,6 +95,12 @@ fun AuthNavigation(
     onConsumeOpenDrinkReminder: () -> Unit = {},
     openStepTracker: Boolean = false,
     onConsumeOpenStepTracker: () -> Unit = {},
+    openChatFromNotification: Boolean = false,
+    openChatRoomId: String? = null,
+    onConsumeOpenChatFromNotification: () -> Unit = {},
+    openNotificationsFromNotification: Boolean = false,
+    openNotificationPostId: String? = null,
+    onConsumeOpenNotificationsFromNotification: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val refreshRegistry = remember { RefreshRegistry() }
@@ -99,6 +113,24 @@ fun AuthNavigation(
     var currentUserUid by remember { mutableStateOf(auth.currentUser?.uid) }
     val startDestination = remember {
         if (auth.currentUser != null) "home" else "opening"
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { }
+
+    LaunchedEffect(currentUserUid, currentEntry?.destination?.route) {
+        val route = currentEntry?.destination?.route
+        val isAuthRoute = route == null || route == "opening" || route == "login" || route == "register"
+        if (currentUserUid != null &&
+            !isAuthRoute &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !RealtimeSystemNotifier.hasNotificationPermission(context) &&
+            !RealtimeBadgePrefs.hasRequestedNotificationPermission(context)
+        ) {
+            RealtimeBadgePrefs.markNotificationPermissionRequested(context)
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     DisposableEffect(auth) {
@@ -135,11 +167,24 @@ fun AuthNavigation(
             TrainingStreakStore.reset()
             null
         }
+        val badgeRegistration = if (uid != null) {
+            val displayName = auth.currentUser.resolveDisplayName("")
+            observeRealtimeBadges(
+                context = context,
+                userId = uid,
+                userDisplayName = displayName,
+                refreshRegistry = refreshRegistry,
+            )
+        } else {
+            RealtimeBadgeStore.reset()
+            null
+        }
         onDispose {
             catalogRegistration?.remove()
             guidedProgressRegistration?.remove()
             customWorkoutRegistration?.remove()
             streakRegistration?.remove()
+            badgeRegistration?.remove()
         }
     }
 
@@ -179,6 +224,55 @@ fun AuthNavigation(
                 navController.navigate("step_tracker") {
                     launchSingleTop = true
                 }
+            }
+        }
+    }
+
+    LaunchedEffect(openChatFromNotification, openChatRoomId, currentUserRole) {
+        if (!openChatFromNotification) return@LaunchedEffect
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        val currentRoute = navController.currentDestination?.route
+        val isOnAuthScreen = currentRoute == "opening" || currentRoute == "login" || currentRoute == "register"
+        if (currentUser == null || isOnAuthScreen) {
+            onConsumeOpenChatFromNotification()
+            return@LaunchedEffect
+        }
+        val isVerifiedOrAdmin = currentUser.isEmailVerified || currentUserRole == "admin"
+        if (isVerifiedOrAdmin) {
+            val targetRoomId = openChatRoomId?.trim().orEmpty()
+            onConsumeOpenChatFromNotification()
+            VenueChatBridge.setPendingTarget(null)
+            val route = if (targetRoomId.isNotEmpty()) {
+                "chat?returnDirectlyOnBack=false&roomId=${Uri.encode(targetRoomId)}"
+            } else {
+                "chat?returnDirectlyOnBack=false"
+            }
+            navController.navigate(route) {
+                launchSingleTop = true
+            }
+        }
+    }
+
+    LaunchedEffect(openNotificationsFromNotification, openNotificationPostId, currentUserRole) {
+        if (!openNotificationsFromNotification) return@LaunchedEffect
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        val currentRoute = navController.currentDestination?.route
+        val isOnAuthScreen = currentRoute == "opening" || currentRoute == "login" || currentRoute == "register"
+        if (currentUser == null || isOnAuthScreen) {
+            onConsumeOpenNotificationsFromNotification()
+            return@LaunchedEffect
+        }
+        val isVerifiedOrAdmin = currentUser.isEmailVerified || currentUserRole == "admin"
+        if (isVerifiedOrAdmin) {
+            val targetPostId = openNotificationPostId?.trim().orEmpty()
+            onConsumeOpenNotificationsFromNotification()
+            val route = if (targetPostId.isNotEmpty()) {
+                "notifications?postId=${Uri.encode(targetPostId)}"
+            } else {
+                "notifications"
+            }
+            navController.navigate(route) {
+                launchSingleTop = true
             }
         }
     }
@@ -398,8 +492,12 @@ fun AuthNavigation(
         ) {
             val activeUid = currentUserUid ?: auth.currentUser?.uid
             val streakSummary = TrainingStreakStore.summaryFor(activeUid)
+            val unreadNotifCount = RealtimeBadgeStore.unreadNotificationTotalFor(activeUid)
+            val unreadChatCount = RealtimeBadgeStore.unreadChatTotalFor(activeUid)
             HomeScreen(
                 streakDaysCount = streakSummary.currentStreakDays,
+                unreadNotificationCount = unreadNotifCount,
+                unreadChatCount = unreadChatCount,
                 onStreakClick = { navigateToTab(HomeNavTab.LATIHAN) },
                 onCreatePost = {
                     navController.navigate("create_post") { launchSingleTop = true }
@@ -695,6 +793,7 @@ fun AuthNavigation(
                     GuidedWorkoutProgressStore.reset()
                     CustomWorkoutStore.clear()
                     TrainingStreakStore.reset()
+                    RealtimeBadgeStore.reset()
                     FirebaseAuth.getInstance().signOut()
                     coroutineScope.launch { clearGoogleCredentialState(context) }
                     navController.navigate("opening") {
@@ -716,24 +815,40 @@ fun AuthNavigation(
                 onUserProfileClick = navigateToUserProfile,
             )
         }
-        composable("notifications") {
+        composable(
+            route = "notifications?postId={postId}",
+            arguments = listOf(
+                navArgument("postId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) { entry ->
+            val postId = entry.arguments?.getString("postId").orEmpty().ifBlank { null }
             NotificationScreen(
                 onBack = { navController.popBackStack() },
+                initialSelectedPostId = postId,
                 onUserProfileClick = navigateToUserProfile,
             )
         }
         composable(
-            route = "chat?returnDirectlyOnBack={returnDirectlyOnBack}",
+            route = "chat?returnDirectlyOnBack={returnDirectlyOnBack}&roomId={roomId}",
             arguments = listOf(
                 navArgument("returnDirectlyOnBack") {
                     type = NavType.BoolType
                     defaultValue = false
                 },
+                navArgument("roomId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
             ),
         ) { entry ->
             val returnDirectlyOnBack = entry.arguments?.getBoolean("returnDirectlyOnBack") ?: false
+            val roomId = entry.arguments?.getString("roomId").orEmpty().ifBlank { null }
             ChatScreen(
                 onBack = { navController.popBackStack() },
+                initialSelectedRoomId = roomId,
                 returnDirectlyOnBack = returnDirectlyOnBack,
                 onOpenVenueFinder = navigateToVenueFinder,
             )

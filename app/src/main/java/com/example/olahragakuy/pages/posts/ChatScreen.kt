@@ -65,6 +65,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -699,6 +701,13 @@ fun ChatScreen(
     val currentUserName = remember(currentUser) { currentUser.resolveDisplayName("Anda") }
 
     if (!isPreview) {
+        LaunchedEffect(initialSelectedRoomId) {
+            val targetId = initialSelectedRoomId?.trim().orEmpty()
+            if (targetId.isNotEmpty()) {
+                selectedRoomId = targetId
+            }
+        }
+
         LaunchedEffect(initialSelectedRoomId, initialDirectRoom) {
             if (initialSelectedRoomId == null && initialDirectRoom == null) {
                 VenueChatBridge.consumePendingTarget()?.let { target ->
@@ -871,6 +880,7 @@ fun ChatScreen(
     } else {
         ChatListContent(
             rooms = filterChatRooms(allRooms, selectedTab, searchQuery),
+            unreadCountsByRoom = if (isPreview) emptyMap() else RealtimeBadgeStore.unreadChatCountsByRoom,
             followingFriends = followingFriends,
             selectedTab = selectedTab,
             onTabChange = { selectedTab = it },
@@ -964,6 +974,7 @@ fun ChatScreen(
 @Composable
 private fun ChatListContent(
     rooms: List<ChatRoomUiModel>,
+    unreadCountsByRoom: Map<String, Int>,
     followingFriends: List<FollowingFriend>,
     selectedTab: ChatTab,
     onTabChange: (ChatTab) -> Unit,
@@ -1092,6 +1103,7 @@ private fun ChatListContent(
                         items(rooms, key = { it.id }) { room ->
                             ChatRoomRow(
                                 room = room,
+                                unreadCount = unreadCountsByRoom[room.id] ?: 0,
                                 onClick = { onRoomClick(room) },
                             )
                         }
@@ -1130,8 +1142,10 @@ private fun ChatTabButton(
 @Composable
 private fun ChatRoomRow(
     room: ChatRoomUiModel,
+    unreadCount: Int = 0,
     onClick: () -> Unit,
 ) {
+    val badgeText = formatBadgeCount(unreadCount)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1157,17 +1171,42 @@ private fun ChatRoomRow(
             )
             Text(
                 text = room.lastMessage,
-                color = HomeText.copy(alpha = 0.85f),
+                color = HomeText.copy(alpha = if (badgeText != null) 1f else 0.85f),
+                fontWeight = if (badgeText != null) FontWeight.SemiBold else FontWeight.Normal,
                 fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(
-            text = room.dateLabel,
-            color = HomeText.copy(alpha = 0.85f),
-            fontSize = 10.sp,
-        )
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = room.dateLabel,
+                color = HomeText.copy(alpha = 0.85f),
+                fontSize = 10.sp,
+            )
+            if (badgeText != null) {
+                Box(
+                    modifier = Modifier
+                        .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color(0xFFE53935))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = badgeText,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        lineHeight = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1181,10 +1220,24 @@ private fun ChatDetailContent(
     onVenueDetailClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val refreshRegistry = LocalKuyRefresh.current
     val isPreview = LocalInspectionMode.current
     var messageInput by rememberSaveable(room.id) { mutableStateOf("") }
     var remoteMessages by remember(room.id) { mutableStateOf<List<ChatMessageUiModel>>(emptyList()) }
+
+    if (!isPreview) {
+        DisposableEffect(room.id, currentUserId) {
+            RealtimeBadgeStore.setActiveOpenChatRoom(
+                userId = currentUserId,
+                roomId = room.id,
+                context = context,
+            )
+            onDispose {
+                RealtimeBadgeStore.clearActiveOpenChatRoom(room.id)
+            }
+        }
+    }
 
     if (!isPreview) {
         DisposableEffect(room.id, currentUserId) {
@@ -1253,6 +1306,18 @@ private fun ChatDetailContent(
             localMessages = localMessages,
             remoteMessages = remoteMessages,
         )
+    }
+
+    if (!isPreview) {
+        val latestMessageMillis = messages.maxOfOrNull { it.createdAtMillis } ?: 0L
+        LaunchedEffect(room.id, currentUserId, latestMessageMillis) {
+            RealtimeBadgeStore.markChatRoomRead(
+                userId = currentUserId,
+                roomId = room.id,
+                latestMessageMillis = maxOf(System.currentTimeMillis(), latestMessageMillis),
+                context = context,
+            )
+        }
     }
 
     val sendMessage: () -> Unit = {
