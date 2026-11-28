@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -34,14 +35,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.R
+import com.example.olahragakuy.pages.posts.formatBadgeCount
+import com.example.olahragakuy.ui.theme.HomeNavy
 import com.example.olahragakuy.ui.theme.KuyBlue
 import com.example.olahragakuy.ui.theme.KuyButton
 import com.example.olahragakuy.ui.theme.KuyNavy
 import com.example.olahragakuy.ui.theme.KuyOrange
 import com.example.olahragakuy.ui.theme.KuyText
+import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
+
+private val UnreadBadgeRed = Color(0xFFE53935)
 
 @Composable
 fun KuyBackButton(
@@ -82,6 +91,8 @@ fun KuyHomeTopBar(
     onNotificationClick: () -> Unit,
     onChatClick: () -> Unit,
     modifier: Modifier = Modifier,
+    unreadNotificationCount: Int = 0,
+    unreadChatCount: Int = 0,
 ) {
     Row(
         modifier
@@ -101,9 +112,23 @@ fun KuyHomeTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            HomeLogoButton("Cari", R.drawable.ic_baseline_search, onClick = onSearchClick)
-            HomeLogoButton("Notifikasi", R.drawable.ic_mingcute_notification_fill, onClick = onNotificationClick)
-            HomeLogoButton("Chat", R.drawable.ic_majesticons_share, onClick = onChatClick)
+            HomeLogoButton(
+                label = "Cari",
+                iconRes = R.drawable.ic_baseline_search,
+                onClick = onSearchClick,
+            )
+            HomeLogoButton(
+                label = "Notifikasi",
+                iconRes = R.drawable.ic_mingcute_notification_fill,
+                badgeCount = unreadNotificationCount,
+                onClick = onNotificationClick,
+            )
+            HomeLogoButton(
+                label = "Chat",
+                iconRes = R.drawable.ic_mingcute_message_3_fill,
+                badgeCount = unreadChatCount,
+                onClick = onChatClick,
+            )
         }
     }
 }
@@ -154,22 +179,54 @@ fun KuyBottomNavBar(
 fun HomeLogoButton(
     label: String,
     @DrawableRes iconRes: Int? = null,
+    badgeCount: Int = 0,
     onClick: () -> Unit,
 ) {
+    val badgeText = formatBadgeCount(badgeCount)
     if (iconRes != null) {
         Box(
-            modifier = Modifier
-                .size(width = 40.dp, height = 44.dp)
-                .clip(CircleShape)
-                .clickable(role = Role.Button, onClick = onClick),
+            modifier = Modifier.size(width = 44.dp, height = 44.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = label,
-                tint = KuyBlue,
-                modifier = Modifier.size(32.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = onClick),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = if (badgeText != null) "$label ($badgeText baru)" else label,
+                    tint = KuyBlue,
+                    modifier = Modifier.size(30.dp),
+                )
+            }
+            if (badgeText != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 1.dp, end = 1.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(HomeNavy)
+                        .padding(1.5.dp)
+                        .defaultMinSize(minWidth = 17.dp, minHeight = 17.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(UnreadBadgeRed)
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = badgeText,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        lineHeight = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     } else {
         TextButton(
@@ -182,5 +239,19 @@ fun HomeLogoButton(
                 Text(label, color = Color(0xFF5094D5), fontSize = 9.sp)
             }
         }
+    }
+}
+
+@Preview(name = "Top Bar Dengan Badge", showBackground = true, backgroundColor = 0xFF0A1D33)
+@Composable
+private fun KuyHomeTopBarWithBadgesPreview() {
+    OlahragaKuyTheme {
+        KuyHomeTopBar(
+            onSearchClick = {},
+            onNotificationClick = {},
+            onChatClick = {},
+            unreadNotificationCount = 3,
+            unreadChatCount = 1,
+        )
     }
 }

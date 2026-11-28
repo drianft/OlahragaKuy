@@ -80,6 +80,8 @@ import com.google.firebase.firestore.Query
 @Composable
 fun HomeScreen(
     streakDaysCount: Int = 0,
+    unreadNotificationCount: Int = 0,
+    unreadChatCount: Int = 0,
     onStreakClick: () -> Unit = {},
     onCreatePost: () -> Unit = {},
     onSearchClick: () -> Unit = {},
@@ -146,6 +148,8 @@ fun HomeScreen(
                 onSearchClick = onSearchClick,
                 onNotificationClick = onNotificationClick,
                 onChatClick = onChatClick,
+                unreadNotificationCount = unreadNotificationCount,
+                unreadChatCount = unreadChatCount,
             )
         },
         bottomBar = {
