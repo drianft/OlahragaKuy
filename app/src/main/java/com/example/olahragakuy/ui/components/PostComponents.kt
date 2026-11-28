@@ -23,20 +23,35 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,6 +81,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -75,12 +91,17 @@ import coil.compose.SubcomposeAsyncImage
 import com.example.olahragakuy.R
 import com.example.olahragakuy.pages.posts.DefaultPostCategories
 import com.example.olahragakuy.pages.posts.FollowingFriend
+import com.example.olahragakuy.pages.posts.MAX_POST_REPORT_DETAIL_LENGTH
+import com.example.olahragakuy.pages.posts.PostReportReason
 import com.example.olahragakuy.pages.posts.PostUiModel
 import com.example.olahragakuy.ui.theme.HomeBlue
 import com.example.olahragakuy.ui.theme.HomeNavy
 import com.example.olahragakuy.ui.theme.HomeOrange
 import com.example.olahragakuy.ui.theme.HomeText
 import com.example.olahragakuy.ui.theme.KuyButton
+import com.example.olahragakuy.ui.theme.KuyError
+import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
+import com.example.olahragakuy.ui.theme.Poppins
 
 @Composable
 fun HomePlaceholder(
@@ -230,8 +251,21 @@ fun HomePostCard(
     onAuthorClick: (() -> Unit)? = null,
     onReportClick: (() -> Unit)? = null,
     preparedImage: androidx.compose.ui.graphics.painter.Painter? = null,
+    isOwnPost: Boolean = false,
+    isReported: Boolean = false,
+    onEditClick: (() -> Unit)? = null,
+    onCopyClick: (() -> Unit)? = null,
+    onShareClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null,
+    onReportClick: (() -> Unit)? = null,
 ) {
-    var postMenuExpanded by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    val showEdit = isOwnPost && (onEditClick != null)
+    val showDelete = isOwnPost && (onDeleteClick != null)
+    val showReport = !isOwnPost && (onReportClick != null)
+    val hasTopActions = showEdit || (onCopyClick != null) || (onShareClick != null)
+    val hasBottomAction = showDelete || showReport
+    val hasMenuActions = hasTopActions || hasBottomAction
 
     Column(
         modifier
@@ -294,30 +328,110 @@ fun HomePostCard(
                 }
             }
             Box {
-                TextButton(
+                IconButton(
                     onClick = {
-                        if (onReportClick != null) {
-                            postMenuExpanded = true
+                        if (hasMenuActions) {
+                            menuExpanded = true
                         } else {
                             onAction("Menu postingan belum tersedia.")
                         }
                     },
                 ) {
-                    Text("⋮", color = HomeText, fontSize = 28.sp)
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Opsi postingan",
+                        tint = HomeText,
+                        modifier = Modifier.size(26.dp),
+                    )
                 }
-                if (onReportClick != null) {
+                if (hasMenuActions) {
                     DropdownMenu(
-                        expanded = postMenuExpanded,
-                        onDismissRequest = { postMenuExpanded = false },
-                        containerColor = HomeNavy,
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                        containerColor = Color(0xFF16324F),
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Laporkan Postingan", color = HomeOrange) },
-                            onClick = {
-                                postMenuExpanded = false
-                                onReportClick()
-                            },
-                        )
+                        if (showEdit) {
+                            DropdownMenuItem(
+                                text = { Text("Edit Caption", color = HomeText, fontFamily = Poppins) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Edit, contentDescription = null, tint = HomeText)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onEditClick.invoke()
+                                },
+                            )
+                        }
+                        if (onCopyClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("Salin Caption", color = HomeText, fontFamily = Poppins) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = HomeText)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onCopyClick()
+                                },
+                            )
+                        }
+                        if (onShareClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("Bagikan", color = HomeText, fontFamily = Poppins) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Share, contentDescription = null, tint = HomeText)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onShareClick()
+                                },
+                            )
+                        }
+                        if (hasTopActions && hasBottomAction) {
+                            HorizontalDivider(color = Color(0xFF4A86C8).copy(alpha = 0.25f))
+                        }
+                        if (showDelete) {
+                            val deleteRed = Color(0xFFE53935)
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Hapus Postingan",
+                                        color = deleteRed,
+                                        fontFamily = Poppins,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = deleteRed)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDeleteClick.invoke()
+                                },
+                            )
+                        } else if (showReport) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (isReported) "Sudah Dilaporkan" else "Laporkan Postingan",
+                                        color = if (isReported) HomeText.copy(alpha = 0.55f) else HomeOrange,
+                                        fontFamily = Poppins,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Flag,
+                                        contentDescription = null,
+                                        tint = if (isReported) HomeText.copy(alpha = 0.55f) else HomeOrange,
+                                    )
+                                },
+                                enabled = !isReported,
+                                onClick = {
+                                    menuExpanded = false
+                                    onReportClick.invoke()
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -726,4 +840,207 @@ fun KuyPostSearchBar(
             }
         },
     )
+}
+
+@Composable
+fun ReportPostDialog(
+    authorName: String,
+    submitting: Boolean,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+    onSubmit: (PostReportReason, String) -> Unit,
+) {
+    var selectedReason by remember { mutableStateOf<PostReportReason?>(null) }
+    var detail by remember { mutableStateOf("") }
+    val requiresDetail = selectedReason == PostReportReason.OTHER
+    val canSubmit = !submitting &&
+        selectedReason != null &&
+        (!requiresDetail || detail.trim().isNotEmpty())
+
+    AlertDialog(
+        onDismissRequest = { if (!submitting) onDismiss() },
+        containerColor = Color(0xFF16324F),
+        titleContentColor = HomeText,
+        textContentColor = HomeText,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Flag,
+                    contentDescription = null,
+                    tint = HomeOrange,
+                    modifier = Modifier.size(22.dp),
+                )
+                Text(
+                    text = "Laporkan Postingan",
+                    fontFamily = Poppins,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "Pilih alasan melaporkan postingan dari $authorName. Laporanmu bersifat rahasia.",
+                    fontFamily = Poppins,
+                    fontSize = 12.sp,
+                    color = HomeText.copy(alpha = 0.8f),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectableGroup(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    PostReportReason.entries.forEach { reason ->
+                        val selected = selectedReason == reason
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (selected) HomeOrange.copy(alpha = 0.14f) else Color.Transparent,
+                                )
+                                .selectable(
+                                    selected = selected,
+                                    enabled = !submitting,
+                                    role = Role.RadioButton,
+                                    onClick = { selectedReason = reason },
+                                )
+                                .padding(horizontal = 6.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = null,
+                                enabled = !submitting,
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = HomeOrange,
+                                    unselectedColor = HomeText.copy(alpha = 0.65f),
+                                ),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = reason.label,
+                                fontFamily = Poppins,
+                                fontSize = 13.sp,
+                                color = if (selected) HomeText else HomeText.copy(alpha = 0.9f),
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = detail,
+                    onValueChange = { next ->
+                        if (next.length <= MAX_POST_REPORT_DETAIL_LENGTH) {
+                            detail = next
+                        }
+                    },
+                    enabled = !submitting,
+                    label = {
+                        Text(
+                            text = if (requiresDetail) {
+                                "Jelaskan alasan laporan *"
+                            } else {
+                                "Catatan tambahan (opsional)"
+                            },
+                            fontFamily = Poppins,
+                            fontSize = 12.sp,
+                        )
+                    },
+                    supportingText = {
+                        Text(
+                            text = "${detail.length}/$MAX_POST_REPORT_DETAIL_LENGTH",
+                            fontFamily = Poppins,
+                            fontSize = 11.sp,
+                            color = HomeText.copy(alpha = 0.65f),
+                        )
+                    },
+                    minLines = 2,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = HomeOrange,
+                        unfocusedBorderColor = HomeText.copy(alpha = 0.35f),
+                        focusedTextColor = HomeText,
+                        unfocusedTextColor = HomeText,
+                        focusedLabelColor = HomeOrange,
+                        unfocusedLabelColor = HomeText.copy(alpha = 0.7f),
+                        cursorColor = HomeOrange,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (!errorMessage.isNullOrBlank()) {
+                    Text(
+                        text = errorMessage,
+                        color = KuyError,
+                        fontFamily = Poppins,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = canSubmit,
+                onClick = { selectedReason?.let { onSubmit(it, detail.trim()) } },
+            ) {
+                if (submitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = HomeOrange,
+                    )
+                } else {
+                    Text(
+                        text = "Kirim Laporan",
+                        color = if (canSubmit) HomeOrange else HomeText.copy(alpha = 0.4f),
+                        fontFamily = Poppins,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                enabled = !submitting,
+                onClick = onDismiss,
+            ) {
+                Text(
+                    text = "Batal",
+                    color = HomeText.copy(alpha = 0.8f),
+                    fontFamily = Poppins,
+                )
+            }
+        },
+    )
+}
+
+@Preview(name = "Dialog Laporkan Postingan", showBackground = true, widthDp = 393, heightDp = 700)
+@Composable
+private fun ReportPostDialogPreview() {
+    OlahragaKuyTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(HomeNavy),
+        ) {
+            ReportPostDialog(
+                authorName = "SayurOlahraga",
+                submitting = false,
+                errorMessage = null,
+                onDismiss = {},
+                onSubmit = { _, _ -> },
+            )
+        }
+    }
 }

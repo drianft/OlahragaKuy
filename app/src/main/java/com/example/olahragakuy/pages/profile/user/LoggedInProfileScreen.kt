@@ -14,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.olahragakuy.pages.posts.EditPostTarget
 import com.example.olahragakuy.pages.profile.admin.AdminProfileScreen
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.theme.KuyNavy
@@ -26,6 +27,7 @@ fun LoggedInProfileScreen(
     onHomeClick: () -> Unit,
     onLogout: () -> Unit,
     onTabSelected: (HomeNavTab) -> Unit = {},
+    onEditPostRequest: ((EditPostTarget) -> Unit)? = null,
     initialRole: String = "member",
     onOpenAdminDashboard: () -> Unit = {},
 ) {
@@ -146,84 +148,73 @@ fun LoggedInProfileScreen(
                 }
             }
         } else {
-            val handleProfileSaved: (String, String) -> Unit = { updatedUsername, updatedBio ->
-                username = updatedUsername
-                displayName = updatedUsername
-                bio = updatedBio
-                saveUserProfileToFirestore(
-                    user = currentUser,
-                    username = updatedUsername,
-                    bio = updatedBio,
-                    onError = { saveError = it },
-                )
-            }
-            val handleDeletePost: (UserPost) -> Unit = { post ->
-                val previousPosts = userPosts
-                userPosts = userPosts.filterNot { it.documentId == post.documentId }
-                deleteUserPostFromFirestore(
-                    user = currentUser,
-                    documentId = post.documentId,
-                    onError = { err ->
-                        userPosts = previousPosts
-                        saveError = err
-                    },
-                )
-            }
-            val handleEditPost: (UserPost, String) -> Unit = { post, newCaption ->
-                val previousPosts = userPosts
-                userPosts = userPosts.map {
-                    if (it.documentId == post.documentId) it.copy(caption = newCaption) else it
-                }
-                updateUserPostCaptionInFirestore(
-                    documentId = post.documentId,
-                    newCaption = newCaption,
-                    onError = { err ->
-                        userPosts = previousPosts
-                        saveError = err
-                    },
-                )
-            }
-            val computedFollowers = maxOf(followers, followersSubCount)
-            val computedFollowing = maxOf(following, followingSubCount)
-
-            if (userRole.equals("admin", ignoreCase = true)) {
-                AdminProfileScreen(
-                    initialUsername = username,
-                    initialDisplayName = displayName,
-                    initialBio = bio,
-                    followers = computedFollowers,
-                    following = computedFollowing,
-                    feedPosts = userPosts,
-                    gridPosts = userPosts,
-                    taggedPosts = taggedPosts,
-                    onBack = onBack,
-                    onHomeClick = onHomeClick,
-                    onTabSelected = onTabSelected,
-                    onLogout = onLogout,
-                    onProfileSaved = handleProfileSaved,
-                    onDeletePost = handleDeletePost,
-                    onEditPost = handleEditPost,
-                    onOpenDashboardReport = onOpenAdminDashboard,
-                )
-            } else {
-                ProfileScreen(
-                    initialUsername = username,
-                    initialDisplayName = displayName,
-                    initialBio = bio,
-                    followers = computedFollowers,
-                    following = computedFollowing,
-                    feedPosts = userPosts,
-                    gridPosts = userPosts,
-                    taggedPosts = taggedPosts,
-                    onBack = onBack,
-                    onHomeClick = onHomeClick,
-                    onTabSelected = onTabSelected,
-                    onLogout = onLogout,
-                    onProfileSaved = handleProfileSaved,
-                    onDeletePost = handleDeletePost,
-                    onEditPost = handleEditPost,
-                )
-            }
+            ProfileScreen(
+                initialUsername = username,
+                initialDisplayName = displayName,
+                initialBio = bio,
+                followers = maxOf(followers, followersSubCount),
+                following = maxOf(following, followingSubCount),
+                feedPosts = userPosts,
+                gridPosts = userPosts,
+                taggedPosts = taggedPosts,
+                onBack = onBack,
+                onHomeClick = onHomeClick,
+                onTabSelected = onTabSelected,
+                onLogout = onLogout,
+                onProfileSaved = { updatedUsername, updatedBio ->
+                    username = updatedUsername
+                    displayName = updatedUsername
+                    bio = updatedBio
+                    saveUserProfileToFirestore(
+                        user = currentUser,
+                        username = updatedUsername,
+                        bio = updatedBio,
+                        onError = { saveError = it },
+                    )
+                },
+                onDeletePost = { post ->
+                    val previousPosts = userPosts
+                    userPosts = userPosts.filterNot { it.documentId == post.documentId }
+                    deleteUserPostFromFirestore(
+                        user = currentUser,
+                        documentId = post.documentId,
+                        onError = { err ->
+                            userPosts = previousPosts
+                            saveError = err
+                        },
+                    )
+                },
+                onOpenEditPost = onEditPostRequest?.let { openEdit ->
+                    { post ->
+                        openEdit(
+                            EditPostTarget(
+                                postId = post.documentId,
+                                authorId = currentUser.uid,
+                                authorName = displayName.ifBlank { username },
+                                caption = post.caption,
+                                imageUrl = post.imageUrl,
+                                category = post.category,
+                                taggedFriends = post.taggedFriends,
+                                taggedNames = post.taggedNames,
+                            ),
+                        )
+                    }
+                },
+                onEditPost = { post, newCaption ->
+                    val previousPosts = userPosts
+                    userPosts = userPosts.map {
+                        if (it.documentId == post.documentId) it.copy(caption = newCaption) else it
+                    }
+                    updateUserPostCaptionInFirestore(
+                        documentId = post.documentId,
+                        newCaption = newCaption,
+                        onError = { err ->
+                            userPosts = previousPosts
+                            saveError = err
+                        },
+                    )
+                },
+            )
         }
 
         if (showError) {

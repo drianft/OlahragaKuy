@@ -35,6 +35,7 @@ fun ProfileScreen(
     onMenuClick: (() -> Unit)? = null,
     onDeletePost: ((UserPost) -> Unit)? = {},
     onEditPost: ((UserPost, String) -> Unit)? = { _, _ -> },
+    onOpenEditPost: ((UserPost) -> Unit)? = null,
 ) {
     var state by rememberSaveable(stateSaver = ProfileUiState.Saver) {
         mutableStateOf(
@@ -110,6 +111,7 @@ fun ProfileScreen(
                     onPostClick = onPostClick,
                     onDeletePost = onDeletePost,
                     onEditPost = onEditPost,
+                    onOpenEditPost = onOpenEditPost,
                     modifier = contentModifier,
                     header = header
                 )

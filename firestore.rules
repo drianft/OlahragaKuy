@@ -66,16 +66,41 @@ rules_version = '2';
 //   - qualified: bool (required, == workoutCompleted || stepDistanceMeters >= 1000)
 //   - updatedAt: timestamp (optional)
 //
+// Collection: reports/{reportId}
+// Fields:
+//   - type: string (required, in ['POST', 'COMMENT', 'LOCATION', 'ACCOUNT'])
+//   - status: string (required, 'PENDING' on create; admin may transition to 'IGNORED', 'RESOLVED_DELETED', 'RESOLVED_WARNED')
+//   - reportedUserId: string (optional, 0..128 chars, != request.auth.uid)
+//   - reportedUsername: string (required, 1..100 chars)
+//   - reporterUserId: string (required, == request.auth.uid)
+//   - reporterUsername: string (required, 1..100 chars)
+//   - reportCategory: string (required, 1..120 chars)
+//   - reportDescription: string (optional, 0..1000 chars)
+//   - contentPreview: string (optional, 0..500 chars)
+//   - thumbnailUrl: string (optional, 0..1000 chars)
+//   - postDocumentId: string (optional, 0..128 chars)
+//   - postTime: string (optional, 0..64 chars)
+//   - likesCount, commentsCount, sharesCount: int (optional, >= 0)
+//   - createdAt: timestamp (required, == request.time)
+//   - resolvedBy: string (admin update only, == request.auth.uid)
+//   - resolvedByName: string (admin update only, 1..100 chars)
+//   - resolvedAt: timestamp (admin update only, == request.time)
+//   - warningTitle: string (admin update only, 0..120 chars)
+//   - warningDescription: string (admin update only, 0..1000 chars)
+//   - warningNotificationId: string (admin update only, 0..128 chars)
+//   - warningRecipientUid: string (admin update only, 0..128 chars)
+//   - deletedPostBackup: map (admin update only, snapshot of deleted post for restore)
+//
 // Collection: posts/{postId}
 // Fields:
 //   - authorId: string (required, == request.auth.uid, immutable)
 //   - authorName: string (required, 1..100 chars, immutable)
-//   - caption: string (required, 0..2000 chars, immutable)
+//   - caption: string (required, 1..2000 chars, owner-editable)
 //   - category: string (optional, 0..200 chars, immutable)
-//   - searchKeywords: list<string> (optional, <= 100 items, immutable)
+//   - searchKeywords: list<string> (optional, <= 100 items, owner-editable)
 //   - imageUrl: string (optional, <= 1000 chars, immutable)
-//   - taggedFriendIds: list<string> (optional, <= 50 items, immutable)
-//   - taggedFriends: list<map> (optional, <= 50 items, immutable)
+//   - taggedFriendIds: list<string> (optional, <= 50 items, owner-editable)
+//   - taggedFriends: list<map> (optional, <= 50 items, owner-editable)
 //   - likes: int (optional, >= 0)
 //   - likedByIds: list<string> (optional, <= 500 items)
 //   - likedByNames: list<string> (optional, <= 500 items)
@@ -83,6 +108,7 @@ rules_version = '2';
 //   - lastCommentId: string (optional, 20 chars)
 //   - Share: int (optional, >= 0)
 //   - createdAt: timestamp (required, == request.time, immutable)
+//   - updatedAt: timestamp (optional, == request.time on owner edit)
 //
 // Collection: workout_exercises/{exerciseId}
 // Fields:
@@ -224,7 +250,7 @@ service cloud.firestore {
         ])
         && data.type in ['POST', 'COMMENT', 'LOCATION', 'ACCOUNT']
         && data.status == 'PENDING'
-        && (!('reportedUserId' in data) || (data.reportedUserId is string && data.reportedUserId.size() <= 128))
+        && (!('reportedUserId' in data) || (data.reportedUserId is string && data.reportedUserId.size() <= 128 && data.reportedUserId != request.auth.uid))
         && data.reportedUsername is string
         && data.reportedUsername.size() > 0
         && data.reportedUsername.size() <= 100
@@ -456,12 +482,30 @@ service cloud.firestore {
 
       function validPostCaptionUpdate() {
         let next = request.resource.data;
+        let changed = next.diff(resource.data).affectedKeys();
         return isAuthenticated()
           && resource.data.authorId == request.auth.uid
-          && next.diff(resource.data).affectedKeys().hasOnly(['caption', 'searchKeywords', 'updatedAt'])
+          && changed.hasOnly([
+            'caption', 'searchKeywords', 'taggedFriendIds', 'taggedFriends', 'updatedAt'
+          ])
           && next.caption is string
           && next.caption.size() > 0
-          && next.caption.size() <= 2000;
+          && next.caption.size() <= 2000
+          && next.caption.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+          && (!changed.hasAny(['searchKeywords']) || (next.searchKeywords is list && next.searchKeywords.size() <= 100))
+          && (
+            !changed.hasAny(['taggedFriendIds', 'taggedFriends'])
+            || (
+              'taggedFriendIds' in next
+              && 'taggedFriends' in next
+              && next.taggedFriendIds is list
+              && next.taggedFriends is list
+              && next.taggedFriendIds.size() <= 50
+              && next.taggedFriends.size() <= 50
+              && next.taggedFriendIds.size() == next.taggedFriends.size()
+            )
+          )
+          && (!changed.hasAny(['updatedAt']) || next.updatedAt == request.time);
       }
 
       allow read: if isAuthenticated();

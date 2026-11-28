@@ -1,5 +1,8 @@
 package com.example.olahragakuy.pages.profile.user
 
+import com.example.olahragakuy.pages.posts.taggedFriendNamesFrom
+import com.example.olahragakuy.pages.posts.taggedFriendsFrom
+
 import com.google.android.gms.tasks.Task
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseUser
@@ -129,6 +132,9 @@ internal fun parseAndSortUserPosts(
             }
             val caption = (data["caption"] as? String)?.takeIf { it.isNotBlank() } ?: "(Tanpa caption)"
             val imageUrl = (data["imageUrl"] as? String)?.takeIf { it.isNotBlank() }
+            val category = (data["category"] as? String)?.trim().orEmpty()
+            val taggedNames = taggedFriendNamesFrom(data["taggedFriends"])
+            val taggedFriends = taggedFriendsFrom(data["taggedFriends"])
             val formattedTime = if (createdAtMillis > 0L) formatTime(createdAtMillis) else "Baru saja"
             TimedPost(
                 createdAtMillis = createdAtMillis,
@@ -138,6 +144,9 @@ internal fun parseAndSortUserPosts(
                     time = formattedTime,
                     imageUrl = imageUrl,
                     documentId = docId,
+                    category = category,
+                    taggedNames = taggedNames,
+                    taggedFriends = taggedFriends,
                 ),
             )
         }
