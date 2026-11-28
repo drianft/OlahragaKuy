@@ -14,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.olahragakuy.pages.posts.EditPostTarget
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.theme.KuyNavy
 import com.google.firebase.auth.FirebaseAuth
@@ -25,6 +26,7 @@ fun LoggedInProfileScreen(
     onHomeClick: () -> Unit,
     onLogout: () -> Unit,
     onTabSelected: (HomeNavTab) -> Unit = {},
+    onEditPostRequest: ((EditPostTarget) -> Unit)? = null,
 ) {
     val refreshRegistry = LocalKuyRefresh.current
     val auth = remember { FirebaseAuth.getInstance() }
@@ -175,6 +177,22 @@ fun LoggedInProfileScreen(
                             saveError = err
                         },
                     )
+                },
+                onOpenEditPost = onEditPostRequest?.let { openEdit ->
+                    { post ->
+                        openEdit(
+                            EditPostTarget(
+                                postId = post.documentId,
+                                authorId = currentUser.uid,
+                                authorName = displayName.ifBlank { username },
+                                caption = post.caption,
+                                imageUrl = post.imageUrl,
+                                category = post.category,
+                                taggedFriends = post.taggedFriends,
+                                taggedNames = post.taggedNames,
+                            ),
+                        )
+                    }
                 },
                 onEditPost = { post, newCaption ->
                     val previousPosts = userPosts

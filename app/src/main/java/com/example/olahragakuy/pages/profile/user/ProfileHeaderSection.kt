@@ -45,7 +45,6 @@ internal fun ProfileHeaderSection(
         modifier = Modifier
             .fillMaxWidth()
             .background(NavyDark)
-            .statusBarsPadding()
             .padding(horizontal = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

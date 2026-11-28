@@ -36,6 +36,7 @@ internal fun ProfileFeedContent(
     modifier: Modifier = Modifier,
     onDeletePost: ((UserPost) -> Unit)? = null,
     onEditPost: ((UserPost, String) -> Unit)? = null,
+    onOpenEditPost: ((UserPost) -> Unit)? = null,
     onReportPost: ((UserPost) -> Unit)? = null,
     header: @Composable () -> Unit,
 ) {
@@ -73,11 +74,15 @@ internal fun ProfileFeedContent(
                         username = username,
                         post = post,
                         onClick = { onPostClick(post) },
-                        canEdit = onEditPost != null,
+                        canEdit = onOpenEditPost != null || onEditPost != null,
                         canDelete = onDeletePost != null,
                         onEditClick = {
-                            editCaptionInput = post.caption
-                            postPendingEdit = post
+                            if (onOpenEditPost != null) {
+                                onOpenEditPost(post)
+                            } else {
+                                editCaptionInput = post.caption
+                                postPendingEdit = post
+                            }
                         },
                         onCopyClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager

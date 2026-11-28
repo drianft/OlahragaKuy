@@ -90,6 +90,19 @@ fun taggedFriendNamesFrom(raw: Any?): List<String> =
         ((item as? Map<*, *>)?.get("displayName") as? String)?.trim()?.takeIf { it.isNotEmpty() }
     }
 
+/** Membaca daftar teman yang ditandai beserta UID dari dokumen postingan. */
+fun taggedFriendsFrom(raw: Any?): List<FollowingFriend> =
+    (raw as? List<*>).orEmpty().mapNotNull { item ->
+        val map = item as? Map<*, *> ?: return@mapNotNull null
+        val uid = (map["uid"] as? String)?.trim().orEmpty()
+        val name = (map["displayName"] as? String)?.trim().orEmpty()
+        if (uid.isNotEmpty() && name.isNotEmpty()) {
+            FollowingFriend(uid = uid, displayName = name)
+        } else {
+            null
+        }
+    }.distinctBy { it.uid }
+
 val TaggedFriendsSaver: Saver<List<FollowingFriend>, Any> = listSaver(
     save = { friends -> friends.flatMap { listOf(it.uid, it.displayName, it.photoUrl.orEmpty()) } },
     restore = { values ->

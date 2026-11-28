@@ -26,6 +26,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -45,6 +50,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -53,18 +60,24 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.olahragakuy.pages.posts.CommentOverlay
+import com.example.olahragakuy.pages.posts.EditPostTarget
+import com.example.olahragakuy.pages.posts.LocalReportedPostIds
 import com.example.olahragakuy.pages.posts.PostUiModel
 import com.example.olahragakuy.pages.posts.currentUserOrNull
+import com.example.olahragakuy.pages.posts.isOwnPost
 import com.example.olahragakuy.pages.posts.resolveDisplayName
+import com.example.olahragakuy.pages.posts.submitPostReport
 import com.example.olahragakuy.pages.posts.syncCurrentUserToFirestore
 import com.example.olahragakuy.pages.posts.toPostUiModel
 import com.example.olahragakuy.pages.posts.togglePostLike
 import com.example.olahragakuy.pages.posts.withLocalState
+import com.example.olahragakuy.pages.profile.user.deleteUserPostFromFirestore
 import com.example.olahragakuy.ui.components.CreatePostPromptBar
 import com.example.olahragakuy.ui.components.HomeNavTab
 import com.example.olahragakuy.ui.components.HomePostCard
 import com.example.olahragakuy.ui.components.KuyBottomNavBar
 import com.example.olahragakuy.ui.components.KuyHomeTopBar
+import com.example.olahragakuy.ui.components.ReportPostDialog
 import com.example.olahragakuy.ui.components.StreakBanner
 import com.example.olahragakuy.ui.theme.HomeBlue
 import com.example.olahragakuy.ui.theme.HomeNavy
@@ -72,6 +85,7 @@ import com.example.olahragakuy.ui.theme.HomeOrange
 import com.example.olahragakuy.ui.theme.HomeText
 import com.example.olahragakuy.ui.theme.KuyButton
 import com.example.olahragakuy.ui.theme.OlahragaKuyTheme
+import com.example.olahragakuy.ui.theme.Poppins
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
@@ -84,14 +98,20 @@ fun HomeScreen(
     unreadChatCount: Int = 0,
     onStreakClick: () -> Unit = {},
     onCreatePost: () -> Unit = {},
+    onEditPost: (EditPostTarget) -> Unit = {},
     onSearchClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onChatClick: () -> Unit = {},
     onTabSelected: (HomeNavTab) -> Unit = {},
     onUserProfileClick: (userId: String, displayName: String) -> Unit = { _, _ -> },
 ) {
+    val context = LocalContext.current
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
+    var postPendingReport by remember { mutableStateOf<PostUiModel?>(null) }
+    var reportSubmitting by remember { mutableStateOf(false) }
+    var reportError by remember { mutableStateOf<String?>(null) }
+    var postPendingDelete by remember { mutableStateOf<PostUiModel?>(null) }
     var posts by remember { mutableStateOf<List<PostUiModel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var feedError by remember { mutableStateOf<String?>(null) }
@@ -209,16 +229,71 @@ fun HomeScreen(
                     }
                     else -> items(visiblePosts, key = { "post:${it.id}" }) { rawPost ->
                         val post = rawPost.withLocalState()
+                        val ownPost = isOwnPost(post, currentUser?.uid)
+                        val alreadyReported = post.id in LocalReportedPostIds
                         HomePostCard(
                             post = post,
                             preparedImage = images.painters[post.id],
                             isLiked = currentUser?.uid != null && currentUser.uid in post.likedByIds,
+                            isOwnPost = ownPost,
+                            isReported = alreadyReported,
                             onLikeClick = {
                                 togglePostLike(
                                     post = post,
                                     onAuthRequired = { notice = "Silakan masuk untuk menyukai postingan." },
                                     onError = { notice = it },
                                 )
+                            },
+                            onEditClick = {
+                                onEditPost(
+                                    EditPostTarget(
+                                        postId = post.id,
+                                        authorId = post.authorId,
+                                        authorName = post.authorName,
+                                        caption = post.caption,
+                                        imageUrl = post.imageUrl,
+                                        category = post.category,
+                                        taggedFriends = post.taggedFriends,
+                                        taggedNames = post.taggedNames,
+                                    ),
+                                )
+                            },
+                            onCopyClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                clipboard?.setPrimaryClip(ClipData.newPlainText("Caption", post.caption))
+                                Toast.makeText(context, "Caption disalin", Toast.LENGTH_SHORT).show()
+                            },
+                            onShareClick = {
+                                val shareText = buildString {
+                                    append("${post.authorName}: ${post.caption}")
+                                    if (!post.imageUrl.isNullOrBlank()) {
+                                        append("\n${post.imageUrl}")
+                                    }
+                                }
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, shareText)
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(shareIntent, "Bagikan postingan"),
+                                )
+                            },
+                            onDeleteClick = {
+                                postPendingDelete = post
+                            },
+                            onReportClick = {
+                                when {
+                                    currentUser == null -> {
+                                        notice = "Silakan masuk untuk melaporkan postingan."
+                                    }
+                                    alreadyReported -> {
+                                        notice = "Kamu sudah melaporkan postingan ini sebelumnya."
+                                    }
+                                    else -> {
+                                        reportError = null
+                                        postPendingReport = post
+                                    }
+                                }
                             },
                             onAction = { notice = it },
                             onCommentClick = { activeCommentPostId = post.id },
@@ -228,6 +303,98 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    postPendingDelete?.let { target ->
+        val deleteRed = Color(0xFFE53935)
+        AlertDialog(
+            onDismissRequest = { postPendingDelete = null },
+            containerColor = Color(0xFF16324F),
+            titleContentColor = HomeText,
+            textContentColor = HomeText,
+            title = {
+                Text(
+                    text = "Hapus Postingan?",
+                    fontFamily = Poppins,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(
+                    text = "Postingan ini akan dihapus secara permanen dan tidak dapat dikembalikan.",
+                    fontFamily = Poppins,
+                    color = HomeText.copy(alpha = 0.85f),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val user = currentUser
+                        postPendingDelete = null
+                        if (user == null) {
+                            notice = "Silakan masuk untuk menghapus postingan."
+                            return@TextButton
+                        }
+                        val previousPosts = posts
+                        posts = posts.filterNot { it.id == target.id }
+                        deleteUserPostFromFirestore(
+                            user = user,
+                            documentId = target.id,
+                            onError = { err ->
+                                posts = previousPosts
+                                notice = err
+                            },
+                        )
+                    },
+                ) {
+                    Text(
+                        text = "Hapus",
+                        color = deleteRed,
+                        fontFamily = Poppins,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { postPendingDelete = null }) {
+                    Text("Batal", color = HomeText.copy(alpha = 0.8f), fontFamily = Poppins)
+                }
+            },
+        )
+    }
+
+    postPendingReport?.let { targetPost ->
+        ReportPostDialog(
+            authorName = targetPost.authorName,
+            submitting = reportSubmitting,
+            errorMessage = reportError,
+            onDismiss = {
+                if (!reportSubmitting) {
+                    postPendingReport = null
+                    reportError = null
+                }
+            },
+            onSubmit = { reason, detail ->
+                if (reportSubmitting) return@ReportPostDialog
+                reportSubmitting = true
+                reportError = null
+                submitPostReport(
+                    post = targetPost,
+                    reason = reason,
+                    detail = detail,
+                    onSuccess = { message ->
+                        reportSubmitting = false
+                        postPendingReport = null
+                        reportError = null
+                        notice = message
+                    },
+                    onError = { err ->
+                        reportSubmitting = false
+                        reportError = err
+                    },
+                )
+            },
+        )
     }
 
     notice?.let { message ->

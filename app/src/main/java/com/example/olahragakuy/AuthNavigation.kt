@@ -42,6 +42,9 @@ import com.example.olahragakuy.pages.posts.CreatePostScreen
 import com.example.olahragakuy.pages.posts.NotificationScreen
 import com.example.olahragakuy.pages.posts.RealtimeBadgePrefs
 import com.example.olahragakuy.pages.posts.RealtimeBadgeStore
+import com.example.olahragakuy.pages.posts.EditPostBridge
+import com.example.olahragakuy.pages.posts.EditPostScreen
+import com.example.olahragakuy.pages.posts.EditPostTarget
 import com.example.olahragakuy.pages.posts.RealtimeSystemNotifier
 import com.example.olahragakuy.pages.posts.SearchPostScreen
 import com.example.olahragakuy.pages.posts.currentUserOrNull
@@ -382,6 +385,13 @@ fun AuthNavigation(
         }
     }
 
+    val navigateToEditPost: (EditPostTarget) -> Unit = { target ->
+        EditPostBridge.setPendingTarget(target)
+        navController.navigate("edit_post") {
+            launchSingleTop = true
+        }
+    }
+
     val mainTabRoutes = remember { setOf("home", "lokasi", "latihan", "profile") }
 
     KuyRefreshHost(
@@ -502,6 +512,7 @@ fun AuthNavigation(
                 onCreatePost = {
                     navController.navigate("create_post") { launchSingleTop = true }
                 },
+                onEditPost = navigateToEditPost,
                 onSearchClick = {
                     navController.navigate("search_posts") { launchSingleTop = true }
                 },
@@ -789,6 +800,7 @@ fun AuthNavigation(
                 },
                 onHomeClick = { navigateToTab(HomeNavTab.KOMUNITAS) },
                 onTabSelected = navigateToTab,
+                onEditPostRequest = navigateToEditPost,
                 onLogout = {
                     GuidedWorkoutProgressStore.reset()
                     CustomWorkoutStore.clear()
@@ -807,6 +819,26 @@ fun AuthNavigation(
             CreatePostScreen(
                 onBack = { navController.popBackStack() },
                 onPosted = { navController.popBackStack() },
+            )
+        }
+        composable("edit_post") { entry ->
+            val target = remember(entry.id) { EditPostBridge.peekTarget() }
+            val closeEditPost: () -> Unit = {
+                if (navController.currentBackStackEntry?.id == entry.id) {
+                    navController.popBackStack()
+                }
+            }
+            DisposableEffect(entry.id) {
+                onDispose {
+                    if (EditPostBridge.peekTarget() == target) {
+                        EditPostBridge.clear()
+                    }
+                }
+            }
+            EditPostScreen(
+                target = target,
+                onBack = closeEditPost,
+                onSaved = closeEditPost,
             )
         }
         composable("search_posts") {
